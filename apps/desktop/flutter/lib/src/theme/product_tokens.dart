@@ -1,6 +1,6 @@
 /// The tokens and type recipes only BeyondTranslate itself has a use for.
 ///
-/// `packages/ui_flutter` is vendored from upstream and stays domain-free, so
+/// The `dazzui` kit is an upstream package and stays domain-free, so
 /// anything that encodes a product concept lives here instead: the provider
 /// brand colours, the marker on a preferred translation, the platform type
 /// stacks, and the typography of a source / translation pair.

@@ -272,7 +272,7 @@ class AppThemeName {
 
 /// The kit's token set for a palette, in the app's own faces.
 ///
-/// Everything visual comes from `beyondtranslate_ui`; this names which of its
+/// Everything visual comes from `dazzui`; this names which of its
 /// themes a family and brightness map to, and re-points the two type faces it
 /// carries. The kit names Apple faces and leaves the family slot empty, which
 /// is right on a Mac and resolves to whatever the engine defaults to

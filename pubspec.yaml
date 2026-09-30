@@ -8,7 +8,6 @@ environment:
 workspace:
   - apps/desktop/flutter
   - packages/runtime
-  - packages/ui_flutter
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -17,10 +16,7 @@ dev_dependencies:
 melos:
   scripts:
     analyze:
-      # packages/ui_flutter is vendored from upstream by scripts/sync_ui.py.
-      # Upstream owns its lints as well as its formatting; holding it to this
-      # repository's `--fatal-infos` bar would only show up as drift.
-      run: melos exec -c 1 --ignore="beyondtranslate_ui" -- flutter analyze --fatal-infos
+      run: melos exec -c 1 -- flutter analyze --fatal-infos
       description: Run `flutter analyze` for all packages.
 
     codegen:
@@ -34,14 +30,6 @@ melos:
     format-check:
       run: python3 scripts/format.py --check
       description: Check formatting of Dart, Rust, and Swift source files.
-
-    sync-ui:
-      run: python3 scripts/sync_ui.py
-      description: Re-vendor packages/ui_flutter from github.com/fastforgedev/ui.
-
-    sync-ui-check:
-      run: python3 scripts/sync_ui.py --check
-      description: Fail if the vendored packages/ui_flutter has drifted from upstream.
 
     fix:
       exec: dart fix . --apply

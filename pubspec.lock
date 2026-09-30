@@ -201,6 +201,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.8"
+  dazzui:
+    dependency: transitive
+    description:
+      name: dazzui
+      sha256: "492a702e6265ca6311476e1690777c1f21f07032c34b6fbaf157490ab18b5807"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.0"
   dependency_validator:
     dependency: transitive
     description:

@@ -1,7 +1,7 @@
 // Per-block goldens for the 业务组件 — the widgets that compose the design
 // system's atoms into BeyondTranslate's own vocabulary.
 //
-// The atoms' own goldens live in `packages/ui_flutter/test/golden_test.dart`;
+// The atoms' own goldens live upstream in the `dazzui` package's test suite;
 // this suite is its twin on this side of the boundary, and shares its harness:
 // each block renders on its own at DPR 1 into a few tens of kilobytes, so a
 // regression names the block it broke and the image is small enough to look at.

@@ -26,13 +26,6 @@ DEFAULT_IGNORED_FILES = {
     Path("GeneratedPluginRegistrant.swift"),
 }
 
-# Vendored from upstream by scripts/sync_ui.py. Upstream owns their formatting;
-# reformatting them here would show up as drift on the next `--check`.
-EXCLUDED_PREFIXES = (
-    Path("packages/ui_flutter"),
-)
-
-
 def run(command: list[str], *, cwd: Path = ROOT) -> int:
     print(f"$ {' '.join(command)}", flush=True)
     completed = subprocess.run(command, cwd=cwd)
@@ -52,8 +45,6 @@ def normalize_ignore_path(path: str) -> Path:
 
 
 def is_ignored_file(path: Path, ignored_files: set[Path]) -> bool:
-    if any(path.is_relative_to(prefix) for prefix in EXCLUDED_PREFIXES):
-        return True
     return any(path == ignored_file or path.name == str(ignored_file) for ignored_file in ignored_files)
 
 
