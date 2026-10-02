@@ -1,6 +1,24 @@
 {
   "version": 1,
   "skills": {
+    "fastforge": {
+      "source": "fastforgedev/fastforge",
+      "sourceType": "github",
+      "skillPath": "skills/fastforge/SKILL.md",
+      "computedHash": "9a0a280b40d951927d7d2d1220f3e168f41d7bb5baad9b7c83de4e1b46f9c092"
+    },
+    "fastforge-package": {
+      "source": "fastforgedev/fastforge",
+      "sourceType": "github",
+      "skillPath": "skills/fastforge-package/SKILL.md",
+      "computedHash": "f3cfbd69460b0cad0fbc38cd27bf9215063b36ba24297491b25754f771af48f4"
+    },
+    "fastforge-publish": {
+      "source": "fastforgedev/fastforge",
+      "sourceType": "github",
+      "skillPath": "skills/fastforge-publish/SKILL.md",
+      "computedHash": "7a9b9d3e884c7c2639ef65a0d6c2be48c1d487e1f5a2939c9309cfe4666c24e1"
+    },
     "flutter-add-integration-test": {
       "source": "flutter/skills",
       "sourceType": "github",
