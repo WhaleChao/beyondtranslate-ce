@@ -1,0 +1,8 @@
+display_name: BeyondTranslate
+icon: resources/images/app_icons/256x256.png
+generic_name: Translation Application
+categories:
+  - Utility
+keywords:
+  - Translator
+startup_notify: true
