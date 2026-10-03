@@ -141,6 +141,11 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # `flutter build macos` produces a universal binary, so the native
+          # assets hook compiles the Rust runtime for both architectures and
+          # needs the Intel standard library next to the host one.
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
