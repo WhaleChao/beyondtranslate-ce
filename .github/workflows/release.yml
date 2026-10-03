@@ -230,7 +230,7 @@ jobs:
           CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
             cargo install \
               --git https://github.com/fastforgedev/fastforge \
-              --package fastforge_cli \
+              fastforge_cli \
               --locked
 
           fastforge --version
