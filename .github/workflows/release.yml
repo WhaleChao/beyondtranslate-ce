@@ -275,5 +275,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh release edit "$TAG" --draft=false --latest
+          # This job has no checkout, so `gh` cannot infer the repository from
+          # the git remote.
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
