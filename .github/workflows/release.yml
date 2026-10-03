@@ -189,9 +189,51 @@ jobs:
         run: dart pub get
 
       - name: Set up Fastforge
+        if: runner.os != 'Linux'
         uses: fastforgedev/actions/setup@main
         with:
           fastforge-version: ${{ env.FASTFORGE_VERSION }}
+
+      # Fastforge's published Linux binary links against glibc 2.39 and refuses
+      # to start on this 22.04 runner:
+      #
+      #     fastforge: libc.so.6: version `GLIBC_2.38' not found
+      #
+      # so the released installer is only a first try here. When it yields a
+      # binary that runs, that is the end of it; otherwise the CLI is built on
+      # this runner, which links it against the runner's own glibc and keeps the
+      # artifacts compatible with older distributions. Once Fastforge ships a
+      # Linux binary built on ubuntu-22.04 this step turns into a no-op and can
+      # be replaced by `fastforgedev/actions/setup` alone.
+      - name: Set up Fastforge (Linux)
+        if: runner.os == 'Linux'
+        env:
+          FASTFORGE_INSTALL_DIR: ${{ github.workspace }}/.fastforge/bin
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$FASTFORGE_INSTALL_DIR"
+          installer="$(mktemp)"
+          if curl -fsSL https://fastforge-web.lijy91.workers.dev/install.sh -o "$installer" \
+            && FASTFORGE_INSTALL_DIR="$FASTFORGE_INSTALL_DIR" sh "$installer"; then
+            if "$FASTFORGE_INSTALL_DIR/fastforge" --version >/dev/null 2>&1; then
+              echo "The released Fastforge binary runs on this runner."
+              echo "$FASTFORGE_INSTALL_DIR" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          fi
+
+          echo "The released binary cannot run here; building Fastforge from source."
+          # `cargo install` copies the release profile from the Fastforge
+          # workspace; LTO and a single codegen unit make it needlessly slow for
+          # a tool that is about to run once.
+          CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+            cargo install \
+              --git https://github.com/fastforgedev/fastforge \
+              --package fastforge_cli \
+              --locked
+
+          fastforge --version
 
       - name: Package
         id: package
