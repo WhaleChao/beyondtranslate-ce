@@ -27,7 +27,7 @@
 **要用 Homebrew 安装，请运行：**
 
 ```bash
-brew install --cask beyondtranslate/tap/beyondtranslate
+brew install --cask beyondtranslate/tap/beyondtranslate-ce
 ```
 
 ## 开发

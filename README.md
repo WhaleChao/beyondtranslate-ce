@@ -27,7 +27,7 @@ Downloads are available on the [Releases](https://github.com/beyondtranslate/bey
 **To install with Homebrew, run:**
 
 ```bash
-brew install --cask beyondtranslate/tap/beyondtranslate
+brew install --cask beyondtranslate/tap/beyondtranslate-ce
 ```
 
 ## Development
