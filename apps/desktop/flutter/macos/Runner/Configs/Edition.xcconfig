@@ -1,0 +1,13 @@
+// The names that set this edition apart. They are the only edition-specific
+// values in the macOS project: AppInfo.xcconfig and the RunnerTests target read
+// them from here, and Info.plist takes the display name.
+
+// The `.app` bundle and its executable.
+APP_PRODUCT_NAME = BeyondTranslate-CE
+
+// The bundle identifier. It also names the data directory under
+// ~/Library/Application Support.
+APP_BUNDLE_ID = com.beyondtranslate.appce
+
+// The name shown in the menu bar, Finder and Launchpad.
+APP_DISPLAY_NAME = BeyondTranslate CE

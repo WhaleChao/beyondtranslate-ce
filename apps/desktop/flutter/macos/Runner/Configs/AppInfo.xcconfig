@@ -4,11 +4,18 @@
 // future. If not, the values below would default to using the project name when this becomes a
 // 'flutter create' template.
 
+#include "Edition.xcconfig"
+
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = beyondtranslate
+PRODUCT_NAME = $(APP_PRODUCT_NAME)
+
+// Keep the Swift module name stable: MainMenu.xib refers to AppDelegate as
+// `beyondtranslate.AppDelegate`, and the default would be derived from
+// PRODUCT_NAME, which differs between editions.
+PRODUCT_MODULE_NAME = beyondtranslate
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.beyondtranslate.app
+PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2021 LiJianying. All rights reserved.

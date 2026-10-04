@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import '../edition.dart';
 import '../theme/product_tokens.dart'
     show ProductPalette, ProductTokens, ProductTypography;
 import 'ui.dart'
@@ -78,7 +79,7 @@ class FloatingBall extends StatelessWidget {
             Pressable(
               onPressed: onPressed,
               borderRadius: BorderRadius.circular(vars.radiusFull),
-              semanticsLabel: semanticsLabel ?? 'BeyondTranslate',
+              semanticsLabel: semanticsLabel ?? kAppDisplayName,
               builder: (context, pressState) => Container(
                 width: 32,
                 height: 32,
@@ -169,7 +170,7 @@ class FloatingBall extends StatelessWidget {
       onPressed: onPressed,
       borderRadius: BorderRadius.circular(vars.radiusFull),
       semanticsLabel:
-          semanticsLabel ?? (solid ? '已翻译 · 点击还原原文' : 'BeyondTranslate'),
+          semanticsLabel ?? (solid ? '已翻译 · 点击还原原文' : kAppDisplayName),
       builder: (context, states) => AnimatedOpacity(
         duration: context.vars.motionDuration,
         opacity: resting && !states.contains(WidgetState.hovered) ? 0.4 : 1,

@@ -29,7 +29,7 @@
 	     MainMenu.xib, and macOS uses it for the app menu title. Without it the
 	     menu falls back to CFBundleName, i.e. the lowercase target name. -->
 	<key>CFBundleDisplayName</key>
-	<string>BeyondTranslate</string>
+	<string>$(APP_DISPLAY_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>NSAppTransportSecurity</key>

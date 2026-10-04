@@ -48,11 +48,12 @@ import 'package:go_router/go_router.dart';
 import 'package:nativeapi/nativeapi.dart' as na;
 import 'package:nativeapi_flutter/nativeapi_flutter.dart';
 
+import '../edition.dart';
 import '../extensions/window_controller.dart';
 import '../utils/platform_util.dart';
 import 'dock_icon_controller.dart';
 
-const kWorkbenchWindowTitle = 'BeyondTranslate';
+const kWorkbenchWindowTitle = kAppDisplayName;
 const kMiniTranslatorWindowTitle = 'Mini Translator';
 // The deck's main window: 840×560, panes scrolling internally rather than
 // the window growing with content.

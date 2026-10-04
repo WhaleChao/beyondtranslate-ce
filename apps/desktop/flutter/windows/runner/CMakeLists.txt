@@ -25,6 +25,10 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MINOR=${FLUTT
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_PATCH=${FLUTTER_VERSION_PATCH}")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTTER_VERSION_BUILD}")
 
+# Edition names for Runner.rc.
+target_compile_definitions(${BINARY_NAME} PRIVATE "APP_BINARY_NAME=\"${BINARY_NAME}\"")
+target_compile_definitions(${BINARY_NAME} PRIVATE "APP_DISPLAY_NAME=\"${APP_DISPLAY_NAME}\"")
+
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 

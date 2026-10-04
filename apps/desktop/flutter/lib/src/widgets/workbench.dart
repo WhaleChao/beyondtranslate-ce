@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:nativeapi_flutter/nativeapi_flutter.dart' as nativeapi;
 
+import '../edition.dart';
 import '../theme/product_tokens.dart' show ProductTypography;
 import '../utils/platform_util.dart';
 import 'brand_logo.dart' show BrandLogo;
@@ -67,7 +68,7 @@ class _BrandMark extends StatelessWidget {
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              'BeyondTranslate',
+              kAppDisplayName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: vars.displayStyle(

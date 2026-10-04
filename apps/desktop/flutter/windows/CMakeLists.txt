@@ -2,9 +2,13 @@
 cmake_minimum_required(VERSION 3.14)
 project(beyondtranslate LANGUAGES CXX)
 
-# The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "beyondtranslate")
+# The names that set this edition apart. `BINARY_NAME` is the on-disk name of
+# the executable and has to stay in this file as a literal: the Flutter tool
+# and Fastforge read it from here.
+set(BINARY_NAME "BeyondTranslate-CE")
+# Shown in the file properties. As `ProductName` it also names the data
+# directory under %APPDATA%.
+set(APP_DISPLAY_NAME "BeyondTranslate CE")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
 project(runner LANGUAGES CXX)
 
-set(BINARY_NAME "beyondtranslate")
-set(APPLICATION_ID "com.beyondtranslate.app")
+# The names that set this edition apart. `BINARY_NAME` has to stay in this file
+# as a literal: the Flutter tool and Fastforge read it from here.
+set(BINARY_NAME "beyondtranslate-ce")
+# Also names the data directory under ~/.local/share.
+set(APPLICATION_ID "com.beyondtranslate.appce")
+set(APP_DISPLAY_NAME "BeyondTranslate CE")
 
 cmake_policy(SET CMP0063 NEW)
 
@@ -44,6 +48,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 
 add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
+add_definitions("-DAPP_DISPLAY_NAME=\"${APP_DISPLAY_NAME}\"")
 
 # Application build
 add_executable(${BINARY_NAME}
