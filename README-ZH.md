@@ -22,13 +22,12 @@
 
 ## 安装
 
-下载可以在[发布版本](https://github.com/beyondtranslate/beyondtranslate/releases/latest)页面上找到，也可以在[网站](https://beyondtranslate.com/release-notes)上找到其他安装方法。
+下载可以在[发布版本](https://github.com/beyondtranslate/beyondtranslate-ce/releases/latest)页面上找到，也可以在[网站](https://beyondtranslate.com/release-notes)上找到其他安装方法。
 
 **要用 Homebrew 安装，请运行：**
 
 ```bash
-brew tap beyondtranslate/beyondtranslate
-brew install beyondtranslate
+brew install --cask beyondtranslate/tap/beyondtranslate
 ```
 
 ## 开发

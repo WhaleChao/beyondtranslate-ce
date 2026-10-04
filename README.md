@@ -22,13 +22,12 @@ English | [简体中文](./README-ZH.md)
 
 ## Installation
 
-Downloads are available on the [Releases](https://github.com/beyondtranslate/beyondtranslate/releases/latest) page. Also check out the [website](https://beyondtranslate.com/release-notes) for other installation methods.
+Downloads are available on the [Releases](https://github.com/beyondtranslate/beyondtranslate-ce/releases/latest) page. Also check out the [website](https://beyondtranslate.com/release-notes) for other installation methods.
 
 **To install with Homebrew, run:**
 
 ```bash
-brew tap beyondtranslate/beyondtranslate
-brew install beyondtranslate
+brew install --cask beyondtranslate/tap/beyondtranslate
 ```
 
 ## Development

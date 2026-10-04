@@ -279,3 +279,18 @@ jobs:
           # the git remote.
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
           echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+
+      # The tap also polls for new releases every six hours; this only makes the
+      # cask follow right away. `HOMEBREW_TAP_TOKEN` is a token that may run
+      # workflows in beyondtranslate/homebrew-tap (fine-grained: Actions write).
+      - name: Update the Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set; the tap picks the release up on its next scheduled run."
+            exit 0
+          fi
+          gh workflow run update.yml --repo beyondtranslate/homebrew-tap
