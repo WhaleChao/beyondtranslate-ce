@@ -193,7 +193,13 @@ class Workbench extends StatelessWidget {
                             window: windowActions?.window,
                             child: const SizedBox(
                               height: double.infinity,
-                              child: Row(children: [_BrandMark()]),
+                              // A bare Row child gets unbounded width, so the
+                              // mark's own ellipsis never engaged and the name
+                              // ran past a narrow sidebar. Flexible hands it
+                              // the strip's width instead.
+                              child: Row(
+                                children: [Flexible(child: _BrandMark())],
+                              ),
                             ),
                           ),
                     footer: sidebarFooter,
