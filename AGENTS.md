@@ -7,7 +7,7 @@ This file serves as a quick-start reference for AI agents (and human contributor
 **BeyondTranslate** is a convenient translation and dictionary app written in **Flutter** (desktop) with **Rust** native modules. It supports Linux, macOS, and Windows.
 
 - **Homepage:** <https://beyondtranslate.com/>
-- **Repository:** <https://github.com/beyondtranslate/beyondtranslate>
+- **Repository:** <https://github.com/beyondtranslate/beyondtranslate-ce>
 
 ---
 
@@ -494,8 +494,8 @@ The `packages/runtime` package uses **uniffi** to generate Dart FFI bindings for
 - After modifying Rust code, remember to run `python scripts/codegen.py` from the project root to regenerate the Dart and Swift FFI bindings.
 
 ### Flutter desktop build errors on Linux
-- Install required system dependencies: `libappindicator3-dev`, `keybinder-3.0`.
-- See the [Linux requirements section](https://github.com/beyondtranslate/beyondtranslate#linux-requirements) in the README.
+- Install the Flutter Linux toolchain and the headers cnativeapi builds against: `clang cmake ninja-build pkg-config libgtk-3-dev libx11-dev libxi-dev`.
+- See the [Development section](https://github.com/beyondtranslate/beyondtranslate-ce#development) in the README.
 
 ---
 

@@ -1,10 +1,11 @@
-# BeyondTranslate
+# BeyondTranslate CE
 
-[![GitHub (pre-)release](https://img.shields.io/github/release/beyondtranslate/beyondtranslate/all.svg?style=flat-square)](https://github.com/beyondtranslate/beyondtranslate/releases)
+[![GitHub release](https://img.shields.io/github/release/beyondtranslate/beyondtranslate-ce/all.svg?style=flat-square)](https://github.com/beyondtranslate/beyondtranslate-ce/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/beyondtranslate/beyondtranslate-ce/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/beyondtranslate/beyondtranslate-ce/actions/workflows/ci.yml)
 
-**BeyondTranslate** (formerly **Biyi**) is a fast, native-experience translation app for macOS, Windows and Linux, built with Flutter and Rust. Capture text from anywhere on screen and get accurate translations powered by multiple engines — all from a lightweight app that stays out of your way until you need it. [View document](https://beyondtranslate.com/docs/)
+**BeyondTranslate CE** is the open-source community edition of **BeyondTranslate** (formerly **Biyi**), a fast, native-feeling translation app for macOS, Windows and Linux. Capture text from anywhere on screen and translate it with the engine of your choice, from a lightweight app that stays out of your way until you need it. [View the documentation](https://beyondtranslate.com/docs/)
 
-> **⚠️ Note:** Architecture upgrade in progress: Core services have been switched to Rust to improve performance and cross-platform reuse. The UI layer continues to be powered by Flutter, while the macOS settings page is rendered natively with SwiftUI.
+The UI is Flutter; the core services (settings, translation, OCR, dictionary) are Rust, reached through generated FFI bindings; on macOS the Settings window is native SwiftUI.
 
 ---
 
@@ -22,65 +23,73 @@ English | [简体中文](./README-ZH.md)
 
 ## Installation
 
-Downloads are available on the [Releases](https://github.com/beyondtranslate/beyondtranslate-ce/releases/latest) page. Also check out the [website](https://beyondtranslate.com/release-notes) for other installation methods.
+Downloads for all three platforms are on the [Releases](https://github.com/beyondtranslate/beyondtranslate-ce/releases/latest) page. The [website](https://beyondtranslate.com/release-notes) lists other installation methods and the release notes.
 
-**To install with Homebrew, run:**
+**macOS, with Homebrew:**
 
 ```bash
 brew install --cask beyondtranslate/tap/beyondtranslate-ce
 ```
 
+> **macOS, from the DMG:** the app is not notarized yet, so macOS refuses to open a freshly downloaded copy. Homebrew clears that for you; after a manual install, run this once:
+>
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/BeyondTranslate-CE.app"
+> ```
+
+**Linux:** the `.deb` declares what it needs (GTK 3, X11 and XInput, which every desktop installation has). The AppImage expects the same libraries on the system.
+
 ## Development
 
-### ⚠️ Linux requirements
+### Prerequisites
 
-- `appindicator3-0.1`
-- [`keybinder-3.0`](https://github.com/kupferlauncher/keybinder)
+- **Flutter**, stable channel. CI builds with 3.47.5.
+- **Rust**, stable toolchain. Flutter's native-assets hook compiles the Rust runtime when the app builds.
+- **Python 3**, for the scripts under `scripts/`.
+- **Linux only**, the Flutter desktop toolchain plus the headers the native window layer builds against:
 
-Run the following command
+  ```bash
+  sudo apt-get install clang cmake ninja-build pkg-config libgtk-3-dev libx11-dev libxi-dev
+  ```
 
-```
-sudo apt-get install appindicator3-0.1 libappindicator3-dev
-sudo apt-get install keybinder-3.0
-```
+### Set up
 
-### Before You Start
-
-1. Clone this repo via git:
-
-```
-$ git clone https://github.com/beyondtranslate/beyondtranslate.git
-```
-
-2. Change to `beyondtranslate` directory
-
-```
-$ cd beyondtranslate
+```bash
+git clone https://github.com/beyondtranslate/beyondtranslate-ce.git
+cd beyondtranslate-ce
+dart pub get
+dart run melos bootstrap
 ```
 
-4. Install dependencies
+### Run
 
-```
-$ melos bs
+```bash
+cd apps/desktop/flutter
+flutter run -d macos   # or linux / windows
 ```
 
-### Run app
+### Check
 
+```bash
+dart run melos run analyze
+dart run melos run test
+cargo test --workspace
+python3 scripts/format.py --check
 ```
-$ cd apps/desktop
-$ flutter run -d linux / macos / windows
-```
+
+[AGENTS.md](./AGENTS.md) describes the repository layout, the Flutter ↔ Rust bridge and the code-generation workflow in detail.
 
 ## Discussion
 
-> Welcome to join the discussion group to share your suggestions and ideas with me.
+> Join the group to share suggestions and ideas.
 
 - [QQ Group](https://jq.qq.com/?_wv=1027&k=vYQ5jW7y)
 
 ## Related Links
 
-- https://github.com/beyondtranslate/beyondtranslate
-- https://github.com/leanflutter/screen_text_extractor
+- [nativeapi](https://github.com/libnativeapi/nativeapi), the native window, tray and shortcut layer
+- [dazzui](https://github.com/dazzlabs/dazzui), the Flutter design system
+- [Fastforge](https://github.com/fastforgedev/fastforge), which packages the releases
 
 ## License
 

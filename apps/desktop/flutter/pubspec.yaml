@@ -1,6 +1,6 @@
 name: beyondtranslate_desktop
 description: A convenient translation and dictionary app written in Flutter.
-homepage: https://github.com/beyondtranslate/beyondtranslate
+homepage: https://github.com/beyondtranslate/beyondtranslate-ce
 publish_to: "none"
 version: 0.6.0+19
 resolution: workspace
