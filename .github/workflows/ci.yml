@@ -42,3 +42,32 @@ jobs:
           cache: true
       - uses: bluefireteam/melos-action@v2
       - run: melos run dependency_validator
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: "3.47.5"
+          cache: true
+      - uses: bluefireteam/melos-action@v2
+      - run: melos run test
+
+  rust:
+    name: rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # The runtime crate has macOS-only code behind `cfg(target_os)`, so
+        # Linux alone would leave it uncompiled.
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - run: cargo test --workspace
