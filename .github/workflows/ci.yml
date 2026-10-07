@@ -52,6 +52,23 @@ jobs:
           channel: "stable"
           flutter-version: "3.47.5"
           cache: true
+      # `flutter test` builds the native assets first: the Rust runtime
+      # through its hook (the runner ships a Rust toolchain) and cnativeapi
+      # against the GTK 3, X11 and Xi headers.
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            libx11-dev \
+            libxi-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
       - uses: bluefireteam/melos-action@v2
       - run: melos run test
 

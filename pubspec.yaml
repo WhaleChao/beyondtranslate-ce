@@ -36,7 +36,10 @@ melos:
       description: Run `dart fix` for all packages.
 
     test:
-      exec: flutter test
+      # One package at a time: every `flutter test` starts with a `pub get`
+      # on the shared workspace, and two of them racing on it fail with
+      # "Failed to update packages".
+      run: melos exec -c 1 -- flutter test
       description: Run `flutter test` for all packages.
 
     dependency_validator:
