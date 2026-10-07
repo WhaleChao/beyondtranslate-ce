@@ -10,10 +10,21 @@ icon: resources/images/app_icons/256x256.png
 keywords:
   - Translator
 generic_name: Translation Application
-installed_size: 22671604
 categories:
   - Utility
+# What the shipped binaries actually link (read off their ELF NEEDED entries):
+# the Flutter GTK embedder and cnativeapi want GTK 3, and cnativeapi also talks
+# to X11 and XInput directly. The tray and the global shortcuts come from
+# cnativeapi, so the appindicator and keybinder packages the Biyi-era app
+# needed are no longer involved. Re-check after bumping Flutter or nativeapi:
+#   readelf -d beyondtranslate-ce lib/*.so | grep NEEDED
 dependencies:
-  - gir1.2-appindicator3-0.1
-  - libkeybinder-3.0-0
+  - libgtk-3-0
+  - libepoxy0
+  - libfontconfig1
+  - libstdc++6
+  - libx11-6
+  - libxi6
+# No `installed_size`: Fastforge writes the value verbatim, and the old one was
+# in bytes where Debian wants KiB, which told apt the package needed ~22 GiB.
 startup_notify: true
