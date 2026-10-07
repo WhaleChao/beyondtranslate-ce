@@ -535,16 +535,9 @@ fn normalize_provider_config_keys(value: &mut Value) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_settings_file() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time went backwards")
-            .as_nanos();
-        std::env::temp_dir()
-            .join(format!("beyondtranslate-settings-{unique}"))
-            .join("settings.json")
+        crate::test_support::unique_temp_dir("beyondtranslate-settings").join("settings.json")
     }
 
     #[test]

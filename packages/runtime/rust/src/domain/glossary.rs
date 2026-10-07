@@ -981,11 +981,7 @@ mod tests {
     use super::*;
 
     fn temp_data_dir() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time went backwards")
-            .as_nanos();
-        std::env::temp_dir().join(format!("beyondtranslate-glossary-{unique}"))
+        crate::test_support::unique_temp_dir("beyondtranslate-glossary")
     }
 
     fn book_input(name: &str) -> GlossaryBookInput {

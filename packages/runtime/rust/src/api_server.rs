@@ -401,18 +401,11 @@ fn write_response(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
     fn unique_data_dir() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "beyondtranslate-api-server-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_nanos()
-        ))
+        crate::test_support::unique_temp_dir("beyondtranslate-api-server")
     }
 
     #[test]

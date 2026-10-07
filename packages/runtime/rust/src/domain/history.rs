@@ -366,11 +366,7 @@ mod tests {
     use super::*;
 
     fn temp_data_dir() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time went backwards")
-            .as_nanos();
-        std::env::temp_dir().join(format!("beyondtranslate-history-{unique}"))
+        crate::test_support::unique_temp_dir("beyondtranslate-history")
     }
 
     fn input(source: &str, translation: &str) -> HistoryEntryInput {
