@@ -169,6 +169,37 @@ Going further than a single screenshot (PipeWire buffers read directly):
   pick up a changed `extension.js`. Verify a reload by introspecting for something new on
   its D-Bus object, not by the extension's state, which stays ACTIVE either way.
 
+## Hyprland (Omarchy), verified 2026-10-09
+
+A different world from GNOME: the compositor answers questions GNOME refuses, and the
+input and capture tools are plain binaries.
+
+- **`HYPRLAND_INSTANCE_SIGNATURE` is not in the imported session environment**, and
+  `hyprctl` refuses to run without it. Derive it at the top of every GUI script:
+  `export HYPRLAND_INSTANCE_SIGNATURE=${HYPRLAND_INSTANCE_SIGNATURE:-$(ls -t "$XDG_RUNTIME_DIR/hypr" | head -1)}`.
+- **Windows from outside: `hyprctl clients -j`** — class, title, `floating`, `pinned`,
+  `size`, `at`, `workspace`, `pid`, `address` for every mapped client, Wayland ones
+  included. Filter by `pid`; the `address` is the handle every dispatcher takes.
+- **Screenshots: `grim out.png`**, done. `slurp` and `wtype` are installed too. `wtype`
+  injects keys through the virtual-keyboard protocol: the focused client sees them, but
+  an app whose global shortcuts come from `XGrabKey` (Xwayland) never does — and it
+  does not see real keys either, so a silent shortcut on Hyprland is the app's bug.
+- **Hyprland 0.56+ speaks Lua.** The config is `hyprland.lua`, and `hyprctl dispatch`
+  wraps its argument in `hl.dispatch(...)`: the old `setfloating address:0x…` text is a
+  Lua syntax error. Working forms:
+  `hyprctl dispatch 'hl.dsp.window.float("address:0x…")'`,
+  `hyprctl eval 'hl.dispatch(hl.dsp.window.pin("address:0x…"))'`, and a rule for the
+  next map, `hyprctl eval 'hl.window_rule({ match = { class = "^x$", title = "^y$" }, float = true, pin = true })'`.
+  `eval` only ever answers `ok`; read the effect back with `hyprctl clients -j`. The
+  API is described in `/usr/share/hypr/stubs/hl.meta.lua`.
+- **`pkill -f` can kill the job itself.** The scratch dir is `claude-<project>`, so a
+  pattern like `pkill -f beyondtranslate` matches `hostrun.py … claude-beyondtranslate-ce`
+  and the job ends with no output and no `[gui] finished` line. Match the bundle path.
+- A Flutter `runWidget` app whose GTK runner still shows the stock window puts a blank,
+  non-resizable toplevel on screen; Hyprland floats it in the middle of the workspace.
+  Harmless for a test, but it is the app's bug (the runner should realize the view
+  without mapping the window), not a compositor quirk.
+
 ## Things that end the user's session
 
 - **An out-of-range monitor index passed to `meta_window_move_to_monitor` aborts Mutter**,
