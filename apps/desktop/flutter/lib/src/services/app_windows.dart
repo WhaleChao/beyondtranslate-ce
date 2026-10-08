@@ -35,6 +35,7 @@
 /// transition as long as one of our windows is still up.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/src/widgets/_window.dart' as flutter_window
@@ -208,14 +209,44 @@ void focusWorkbenchWindow() {
   final window = workbenchWindowController.window;
   if (Platform.isWindows && !_workbenchWindowConfigured) {
     _workbenchWindowConfigured = true;
-    _hideWorkbenchTitleBar(window);
     window.minimumSize = _kWorkbenchWindowMinimumSize.toNative();
     window.center();
+    // Flutter shows the window itself once the view has painted; see below
+    // for why the caption cannot go before that, and why this first show is
+    // left to Flutter.
+    _hideWorkbenchTitleBarOncePainted(window);
+    return;
   }
   // A minimized window is brought front but not out of the Dock by show().
   if (window.isMinimized) window.restore();
   window.show();
   window.focus();
+}
+
+/// Windows: takes the caption off the workbench once Flutter has shown it.
+///
+/// Hiding the title bar changes the client area, and Flutter's Windows view
+/// treats every client resize as a synchronised one: it blocks the platform
+/// thread until a frame of the new size has been presented. Before the view's
+/// first frame that wait cannot succeed — the UI isolate that would build the
+/// frame is the very caller, sitting inside this FFI call — so it times out
+/// and the view never presents again until something else resizes it. That
+/// was the white window on launch, cured by dragging its edge. After the
+/// first frame the same call recovers once the timeout passes, so the caption
+/// goes as soon as the window is up: Flutter shows it on the first frame, and
+/// `isVisible` is the signal.
+void _hideWorkbenchTitleBarOncePainted(Window window) {
+  var polls = 0;
+  Timer.periodic(const Duration(milliseconds: 16), (timer) {
+    if (!window.isVisible) {
+      // Give up after ten seconds rather than poll for the life of the app.
+      if (++polls > 600) timer.cancel();
+      return;
+    }
+    timer.cancel();
+    _hideWorkbenchTitleBar(window);
+    window.focus();
+  });
 }
 
 /// The tray icon's left click pops the mini translator up under the icon, the
