@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
@@ -1172,41 +1173,48 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
           horizontal: _kTrayInsetX,
           vertical: _kTrayInset,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            MiniTranslatorTopBar(
-              key: _toolbarViewKey,
-              sourceLanguage: _sourceLanguage,
-              selectedTargetLanguage: _selectedTargetLanguage,
-              activeConfigIndex: _activeConfigIndex,
-              persistentTargets: settingsStore.general.translationTargets,
-              commonLanguageCodes:
-                  settingsStore.general.commonLanguages.isNotEmpty
-                      ? settingsStore.general.commonLanguages
-                      : defaultCommonLanguages(),
-              onSourceChanged: _handleSourceChanged,
-              onTargetLanguageChanged: _handleTargetLanguageChanged,
-              onConfigTargetSelected: _handleConfigTargetSelected,
-              onManageCommonLanguages: _handleManageCommonLanguages,
-              onAddTarget: _handleAddTarget,
-              onManageTargets: _handleManageTargets,
-              isAlwaysOnTop: _isAlwaysOnTop,
-              onTogglePin: () {
-                setState(() {
-                  _isAlwaysOnTop = !_isAlwaysOnTop;
-                });
-                // On macOS the panel lives at the floating level regardless;
-                // the pin only exempts it from closing on blur.
-                if (!kIsMacOS) _window.isAlwaysOnTop = _isAlwaysOnTop;
-              },
-              onExtractScreenCapture: _handleExtractTextFromScreenCapture,
-              onExtractClipboard: _handleExtractTextFromClipboard,
-              onOpenWorkbench: () => handOffToWorkbench(_text),
-              onOpenSettings: showSettingsWindow,
-            ),
-            _buildBody(context),
-          ],
+        // The window follows the content's laid-out height, not just this
+        // page's own `setState`s: the kit's widgets, fonts and images settle
+        // their size on later frames, and those changes never pass through
+        // here.
+        child: _SizeChangedObserver(
+          onSizeChanged: () => _scheduleWindowResize(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MiniTranslatorTopBar(
+                key: _toolbarViewKey,
+                sourceLanguage: _sourceLanguage,
+                selectedTargetLanguage: _selectedTargetLanguage,
+                activeConfigIndex: _activeConfigIndex,
+                persistentTargets: settingsStore.general.translationTargets,
+                commonLanguageCodes:
+                    settingsStore.general.commonLanguages.isNotEmpty
+                        ? settingsStore.general.commonLanguages
+                        : defaultCommonLanguages(),
+                onSourceChanged: _handleSourceChanged,
+                onTargetLanguageChanged: _handleTargetLanguageChanged,
+                onConfigTargetSelected: _handleConfigTargetSelected,
+                onManageCommonLanguages: _handleManageCommonLanguages,
+                onAddTarget: _handleAddTarget,
+                onManageTargets: _handleManageTargets,
+                isAlwaysOnTop: _isAlwaysOnTop,
+                onTogglePin: () {
+                  setState(() {
+                    _isAlwaysOnTop = !_isAlwaysOnTop;
+                  });
+                  // On macOS the panel lives at the floating level regardless;
+                  // the pin only exempts it from closing on blur.
+                  if (!kIsMacOS) _window.isAlwaysOnTop = _isAlwaysOnTop;
+                },
+                onExtractScreenCapture: _handleExtractTextFromScreenCapture,
+                onExtractClipboard: _handleExtractTextFromClipboard,
+                onOpenWorkbench: () => handOffToWorkbench(_text),
+                onOpenSettings: showSettingsWindow,
+              ),
+              _buildBody(context),
+            ],
+          ),
         ),
       ),
     );
@@ -1251,5 +1259,46 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   @override
   void onShortcutKeyDownExtractFromClipboard() {
     _handleExtractTextFromClipboard();
+  }
+}
+
+/// Calls [onSizeChanged] after any frame that lays [child] out at a new size.
+class _SizeChangedObserver extends SingleChildRenderObjectWidget {
+  const _SizeChangedObserver({
+    required this.onSizeChanged,
+    required Widget super.child,
+  });
+
+  final VoidCallback onSizeChanged;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderSizeChangedObserver(onSizeChanged);
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSizeChangedObserver renderObject,
+  ) {
+    renderObject.onSizeChanged = onSizeChanged;
+  }
+}
+
+class _RenderSizeChangedObserver extends RenderProxyBox {
+  _RenderSizeChangedObserver(this.onSizeChanged);
+
+  VoidCallback onSizeChanged;
+  Size? _lastSize;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size == _lastSize) return;
+    _lastSize = size;
+    // Not during layout: the callback reads the window and may resize it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) onSizeChanged();
+    });
   }
 }
