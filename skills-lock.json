@@ -48,12 +48,6 @@
       "sourceType": "github",
       "skillPath": "skills/flutter-setup-declarative-routing/SKILL.md",
       "computedHash": "2341440c8bce0f176663695eaa71f9f7d7c967772a1dcd0d833c9778504b227e"
-    },
-    "remote-hosts": {
-      "source": "lijy91/skills",
-      "sourceType": "github",
-      "skillPath": "skills/remote-hosts/SKILL.md",
-      "computedHash": "4b7d2d4f14e962e7b5ce58703d0140652657531110db63e4a86bf522f88ce564"
     }
   }
 }
