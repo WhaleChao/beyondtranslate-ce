@@ -49,8 +49,14 @@ Future<void> _showTargetDialog(
   final index = target == null ? -1 : targets.indexOf(target);
   if (target != null && index < 0) return;
 
-  var source = target?.source ?? kAutoSource;
   var targetLang = target?.target ?? defaultTargetLanguage;
+  // 自动检测 is the translator's business, not the pair's: a target names
+  // which language goes to which, so both ends have to be a real language.
+  // A pair stored with an auto source (the launch default) opens on a
+  // concrete one instead.
+  var source = target == null || isAutoSource(target.source)
+      ? _initialSourceLanguage(targetLang)
+      : target.source;
   final editing = target != null;
 
   final saved = await showDialogInCurrentWindow<bool>(
@@ -61,13 +67,14 @@ Future<void> _showTargetDialog(
         final editor = t.settings.general.editor;
 
         final sameLanguage = source == targetLang;
+        final autoSource = isAutoSource(source) || isAutoSource(targetLang);
         final duplicate = settingsStore.general.translationTargets.indexed.any(
           (entry) =>
               entry.$1 != index &&
               entry.$2.source == source &&
               entry.$2.target == targetLang,
         );
-        final canSave = !sameLanguage && !duplicate;
+        final canSave = !sameLanguage && !duplicate && !autoSource;
 
         return Center(
           child: DialogFrame(
@@ -90,7 +97,6 @@ Future<void> _showTargetDialog(
                         label: editor.row.source_language,
                         commonLanguageCodes:
                             settingsStore.general.commonLanguages,
-                        showAutoDetect: true,
                         showNative: true,
                         onChanged: (v) => setDialogState(() => source = v),
                       ),
@@ -130,18 +136,13 @@ Future<void> _showTargetDialog(
                   // Not a warning — what the pair will actually do, said
                   // plainly, so the sheet is readable before it is committed.
                   Text(
-                    source == kAutoSource
-                        ? formatTranslation(
-                            editor.hint_auto,
-                            args: [getLanguageName(targetLang)],
-                          )
-                        : formatTranslation(
-                            editor.hint_source,
-                            args: [
-                              getSourceDisplayName(source),
-                              getLanguageName(targetLang),
-                            ],
-                          ),
+                    formatTranslation(
+                      editor.hint_source,
+                      args: [
+                        getLanguageName(source),
+                        getLanguageName(targetLang),
+                      ],
+                    ),
                     style: vars.sansStyle(
                       fontSize: 11,
                       height: 1.7,
@@ -206,6 +207,20 @@ Future<void> _showTargetDialog(
   await settingsStore.updateGeneral(
     GeneralSettingsPatch(translationTargets: next),
   );
+}
+
+/// The source a new pair opens on: the usual default unless that is already
+/// the target, in which case the first common language that differs, so the
+/// sheet never opens on a pair it refuses to save.
+String _initialSourceLanguage(String targetLang) {
+  if (defaultSourceLanguage != targetLang) return defaultSourceLanguage;
+  for (final code in [
+    ...settingsStore.general.commonLanguages,
+    ...supportedLanguages,
+  ]) {
+    if (code != targetLang && !isAutoSource(code)) return code;
+  }
+  return defaultSourceLanguage;
 }
 
 /// Whether the switch on the target at [index] can be moved.
@@ -807,7 +822,6 @@ class _LanguageField extends StatelessWidget {
     required this.value,
     required this.label,
     required this.commonLanguageCodes,
-    this.showAutoDetect = false,
     this.showNative = false,
     required this.onChanged,
   });
@@ -815,7 +829,6 @@ class _LanguageField extends StatelessWidget {
   final String value;
   final String label;
   final List<String> commonLanguageCodes;
-  final bool showAutoDetect;
   final bool showNative;
   final ValueChanged<String> onChanged;
 
@@ -862,12 +875,7 @@ class _LanguageField extends StatelessWidget {
         ));
   }
 
-  String _selectedLabel() {
-    if (showAutoDetect && value == kAutoSource) {
-      return t.mini_translator.language.auto_detect;
-    }
-    return getLanguageName(value, showNative: showNative);
-  }
+  String _selectedLabel() => getLanguageName(value, showNative: showNative);
 
   void _openLanguageMenu(BuildContext context) {
     final renderBox = context.findRenderObject() as RenderBox?;
@@ -887,18 +895,6 @@ class _LanguageField extends StatelessWidget {
       if (e is! nativeapi.MenuItemClickedEvent) return;
       final v = itemIds[e.itemId];
       if (v != null) onChanged(v);
-    }
-
-    // Auto detect
-    if (showAutoDetect) {
-      final item = nativeapi.MenuItem.createWithLabelAndType(
-        t.mini_translator.language.auto_detect,
-        nativeapi.MenuItemType.normal,
-      )!;
-      menuItems.add(item);
-      itemIds[item.id] = kAutoSource;
-      item.addListener(onItemEvent);
-      menu.addItem(item);
     }
 
     // Common languages
