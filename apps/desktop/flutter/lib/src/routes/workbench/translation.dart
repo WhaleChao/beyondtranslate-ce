@@ -8,12 +8,10 @@ import 'package:go_router/go_router.dart';
 import '../../features.dart';
 import '../../i18n/i18n.dart';
 import '../../services/app_windows.dart' show workbenchTextHandoff;
-import '../../services/history_store.dart';
-import '../../services/runtime.dart'
-    show HistoryEntryInput, InputSubmitMode, ProviderType;
+import '../../services/runtime.dart' show InputSubmitMode, ProviderType;
 import '../../services/settings_store.dart';
 import '../../services/system_translation.dart';
-import '../../services/workbench_translation_controller.dart';
+import '../../services/translation_controller.dart';
 import '../../theme/product_tokens.dart' show ProductPalette, ProductTypography;
 import '../../utils/language_util.dart';
 import '../../utils/shortcut_util.dart';
@@ -44,8 +42,7 @@ import '../../widgets/ui.dart'
         ThemeDataBuildContextProps,
         WidgetSize;
 import '../../widgets/workbench.dart' show WorkbenchToolbar;
-import '../settings/provider_meta.dart'
-    show isDefaultTranslationService, serviceDisplayName;
+import '../settings/provider_meta.dart' show serviceDisplayName;
 import '../settings/services.dart' show ServicesSettingsPage;
 
 /// 翻译 — the deck's TranslateView: the source block over the preferred
@@ -60,8 +57,10 @@ class WorkbenchTranslationPage extends StatefulWidget {
 }
 
 class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
-  final WorkbenchTranslationController _controller =
-      WorkbenchTranslationController();
+  /// The translation backend, shared with the mini translator: the language
+  /// pair, the query, 对比, the dictionary and the history entry all live
+  /// there, so the two windows cannot drift apart on what a query means.
+  final TranslationController _controller = TranslationController();
   final TextEditingController _textController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -75,8 +74,6 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
 
   /// Which target's 复制译文 just fired — that button reads 已复制 for a beat.
   String? _copiedTarget;
-  bool _starred = false;
-  final TranslationHistorySession _historySession = TranslationHistorySession();
   Timer? _copiedTimer;
 
   /// In-place editing of the preferred translation — one target at a time.
@@ -136,51 +133,28 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
     super.dispose();
   }
 
-  /// A manual edit belongs to one query; requerying drops it.
+  /// A manual edit belongs to one query; requerying drops it — and so do the
+  /// open 对比 lists, which would otherwise stare at services the new query
+  /// has not asked.
   Future<void> _submit() async {
-    final source = _controller.text.trim();
-    if (_historySession.beginSource(source)) _starred = false;
     setState(() {
       _editingTarget = null;
       _override.clear();
+      _compareOpen.clear();
     });
     await _controller.submit();
-    await _saveHistory(edited: false);
   }
 
-  /// History keeps one translation per query — the first target's, which is
-  /// the whole story unless 自动匹配 landed on several.
-  Future<void> _saveHistory({required bool edited}) async {
-    final result = _controller.selectedResult;
-    final target = _controller.effectiveTargetLanguage;
-    final translation = _override[target] ?? result?.output(target).text ?? '';
-    final source = _controller.text.trim();
-    if (source.isEmpty || translation.trim().isEmpty || result == null) return;
-    final serviceName = serviceDisplayName(result.service).trim();
-    final entry = await _historySession.save(
-      HistoryEntryInput(
-        source: source,
-        translation: translation,
-        sourceLanguage:
-            _controller.detectedLanguage ?? _controller.sourceLanguage,
-        targetLanguage: target,
-        serviceId: result.service.id,
-        serviceName: serviceName,
-        edited: edited,
-      ),
-    );
-    if (!mounted || entry == null) return;
-    setState(() {
-      _starred = entry.favorite;
-    });
-  }
+  /// The user's edit of the first target's translation — the one history
+  /// keeps, one translation per query.
+  String? get _historyOverride =>
+      _override[_controller.effectiveTargetLanguage];
 
   Future<void> _toggleFavorite() async {
-    if (_historySession.entryId == null) {
-      await _saveHistory(edited: _override.isNotEmpty);
-    }
-    final entry = await _historySession.toggleFavorite();
-    if (mounted && entry != null) setState(() => _starred = entry.favorite);
+    await _controller.toggleFavorite(
+      override: _historyOverride,
+      edited: _override.isNotEmpty,
+    );
   }
 
   Future<void> _saveManualEdit(String target) async {
@@ -193,7 +167,10 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
       }
       _editingTarget = null;
     });
-    await _saveHistory(edited: _override.isNotEmpty);
+    await _controller.saveHistory(
+      override: _historyOverride,
+      edited: _override.isNotEmpty,
+    );
   }
 
   void _refresh() {
@@ -238,10 +215,18 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
     });
   }
 
+  /// Opening a target's list is what asks the other services for it — each
+  /// once per query; closing it leaves their answers where they are.
   void _toggleCompare(String target) {
+    final opening = !_compareOpen.contains(target);
     setState(() {
-      if (!_compareOpen.add(target)) _compareOpen.remove(target);
+      if (opening) {
+        _compareOpen.add(target);
+      } else {
+        _compareOpen.remove(target);
+      }
     });
+    if (opening) unawaited(_controller.compare(target));
   }
 
   /// What the detector says the source is in — the capsule's own 自动检测
@@ -258,27 +243,17 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   /// Why a service came back empty, as it put it — a blanket "failed" gives
   /// the user nothing to act on, and the pane's job in this state is to point
   /// at the fix.
-  static String _reasonOf(WorkbenchServiceResult result) {
-    final reason = result.error?.toString().trim() ?? '';
+  static String _reasonOf(TranslationOutput output) {
+    final reason = output.reason;
     return reason.isEmpty ? t.mini_translator.result.unknown_error : reason;
   }
 
-  /// Whether the selected service came back with nothing but errors — for
-  /// every target it was asked for.
-  static bool _isFailed(WorkbenchServiceResult? result) =>
-      result != null &&
-      result.outputs.values.isNotEmpty &&
-      result.outputs.values.every(
-        (output) => output.error != null && !output.hasText && !output.loading,
-      );
-
   @override
   Widget build(BuildContext context) {
-    final result = _controller.selectedResult;
+    final query = _controller.query;
     // 服务全部失效 — unless what failed is 系统翻译 lacking the language files,
     // which each target's own block reports, with the fix.
-    final failed = _isFailed(result) &&
-        SystemLanguageNotInstalled.of(result?.primary.error) == null;
+    final failed = query != null && query.allFailed;
     final targets = _controller.effectiveTargetLanguages;
     final stacked = targets.length > 1;
 
@@ -332,12 +307,12 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
                                 Expanded(
                                   child: _buildFailedBlock(
                                     context,
-                                    result!,
+                                    query,
                                     stretch: true,
                                   ),
                                 )
                               else
-                                _buildFailedBlock(context, result!)
+                                _buildFailedBlock(context, query)
                             else
                               // 自动匹配 can resolve to more than one target
                               // — a specific rule and the 自动检测 fallback
@@ -352,7 +327,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
                                   Expanded(
                                     child: _buildPreferredBlock(
                                       context,
-                                      result,
+                                      query,
                                       target: targets[i],
                                       index: i,
                                       last: true,
@@ -363,7 +338,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
                                 else
                                   _buildPreferredBlock(
                                     context,
-                                    result,
+                                    query,
                                     target: targets[i],
                                     index: i,
                                     last: i == targets.length - 1,
@@ -372,7 +347,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
                             if (_definitionText != null)
                               DetailBlock(
                                 title: Text(
-                                  _controller.dictionaryResult?.word ??
+                                  query?.dictionary?.word ??
                                       _controller.text.trim(),
                                 ),
                                 subtitle: _pronunciation == null
@@ -497,12 +472,9 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   /// named — the language alone is enough when the answer came from the one
   /// you would expect; a promoted service trails as a qualifier, so you know
   /// what you switched to.
-  BlockHeadingParts _heading(
-    WorkbenchServiceResult? result,
-    String target,
-  ) {
+  BlockHeadingParts _heading(TranslationServiceResult? result, String target) {
     final named = result != null &&
-            !isDefaultTranslationService(result.service, settingsStore.general)
+            result.service.id != _controller.query?.defaultServiceId
         ? serviceDisplayName(result.service)
         : null;
     return translationHeading(
@@ -518,18 +490,20 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   /// one card per service with its reason and the one thing that would fix it.
   Widget _buildFailedBlock(
     BuildContext context,
-    WorkbenchServiceResult result, {
+    TranslationQuery query, {
     bool stretch = false,
   }) {
     final vars = context.vars;
     final translation = t.workbench.translation;
-    final count = _controller.results.length;
+    final count = query.failures.length;
 
     return HighlightBlock(
       rule: HighlightRule.top,
       tone: HighlightTone.danger,
       stretch: stretch,
-      label: BlockHeading(_heading(result, _targetList)),
+      label: BlockHeading(
+        _heading(query.blockResult(query.targets.first), _targetList),
+      ),
       meta: Text(t.mini_translator.result.no_result_meta(count: count)),
       actions: Row(
         children: [
@@ -581,7 +555,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   /// sits once, at the foot of the set.
   Widget _buildPreferredBlock(
     BuildContext context,
-    WorkbenchServiceResult? result, {
+    TranslationQuery? query, {
     required String target,
     required int index,
     required bool last,
@@ -590,26 +564,29 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   }) {
     final vars = context.vars;
     final translation = t.workbench.translation;
-    final output = result?.output(target);
+    // The block belongs to one service — the default — and shows whatever
+    // that service did with this target.
+    final own = query?.blockResult(target);
+    final output = own?.output(target);
     final text = output?.text ?? '';
     final targetName = getLanguageName(target);
 
-    final translating = output?.loading == true;
+    final translating = output != null && output.translating;
     // 系统翻译 without this pair's language files: reason + fix, no text.
-    final missing = output == null || translating || output.hasText
-        ? null
-        : SystemLanguageNotInstalled.of(output.error);
-    final idle = text.isEmpty && !translating && missing == null;
+    final missing = output?.missingLanguage;
+    // The default came back with a reason instead of a translation. It takes
+    // the block the way the missing-language notice does: another service
+    // answering is not this service answering.
+    final failure =
+        output != null && missing == null && output.failed ? output : null;
+    final idle = output == null || !output.asked;
     final open = _compareOpen.contains(target);
     final editing = _editingTarget == target;
     final copied = _copiedTarget == target;
     final override = _override[target];
     final shownText = override ?? text;
 
-    final others = [
-      for (final entry in _controller.results)
-        if (entry.service.id != result?.service.id) entry,
-    ];
+    final others = query?.others(target) ?? const <TranslationServiceResult>[];
     // 对比开关 — lives in the preferred block's action row, the mini's
     // placement. With every other service disabled it degrades to a note.
     final compareToggle = others.isNotEmpty
@@ -643,14 +620,15 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
         variant: ButtonVariant.normal,
         onPressed: _toggleFavorite,
         child: Text(
-          _starred
+          _controller.starred
               ? t.workbench.history_page.favorite_flag
               : translation.favorite,
         ));
 
     // With several blocks, 复制 rides on each block's attribution row as an
     // icon rather than repeating the full action row per target.
-    final stackedMeta = stacked && !translating && !idle && missing == null;
+    final stackedMeta =
+        stacked && !translating && !idle && missing == null && failure == null;
 
     return HighlightBlock(
       // The accent rule fences the first block from the 原文 above it — it is
@@ -659,10 +637,12 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
       hairline: index > 0,
       // A missing language pair is a failed translation, so the slot takes
       // the danger key the way 服务全部失效 does.
-      tone: missing != null ? HighlightTone.danger : HighlightTone.accent,
+      tone: missing != null || failure != null
+          ? HighlightTone.danger
+          : HighlightTone.accent,
       stretch: stretch,
       metaControls: stackedMeta,
-      label: BlockHeading(_heading(result, targetName)),
+      label: BlockHeading(_heading(own, targetName)),
       meta: translating
           ? Text(translation.translating)
           : missing != null
@@ -733,63 +713,77 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
                     ],
                   ],
                 )
-              : editing
+              : failure != null
+                  // The service you configured gave a reason; it sits in the
+                  // translation's slot, and 对比 is there to ask the others.
                   ? Row(
                       children: [
                         Button(
                             variant: ButtonVariant.filled,
-                            onPressed: () => _saveManualEdit(target),
-                            child: Text(t.common.ui.button.save)),
-                        const SizedBox(width: 7),
-                        Button(
-                            variant: ButtonVariant.normal,
-                            onPressed: () =>
-                                setState(() => _editingTarget = null),
-                            child: const Text('取消')),
+                            shortcut: const Text('⌥⏎'),
+                            onPressed: _submit,
+                            child: Text(t.mini_translator.result.retry)),
                         const Spacer(),
-                        Text(
-                          t.workbench.history_page.edit_history_hint,
-                          style: vars.sansStyle(
-                            fontSize: 11,
-                            height: 1,
-                            color: vars.colorContentSubtle,
-                          ),
-                        ),
+                        compareToggle,
                       ],
                     )
-                  : stacked
-                      // 编辑 and 对比 are this target's: the editing row unfolds
-                      // here and the list opens under this block. 收藏 belongs
-                      // to the paragraph, so it sits once, at the foot of the set.
+                  : editing
                       ? Row(
-                          children: [
-                            if (last) favoriteButton,
-                            const Spacer(),
-                            editButton,
-                            const SizedBox(width: 7),
-                            compareToggle,
-                          ],
-                        )
-                      : Row(
                           children: [
                             Button(
                                 variant: ButtonVariant.filled,
-                                onPressed: shownText.isNotEmpty
-                                    ? () => _copyResult(target, shownText)
-                                    : null,
-                                child: Text(
-                                  copied
-                                      ? translation.copied
-                                      : translation.copy_result,
-                                )),
+                                onPressed: () => _saveManualEdit(target),
+                                child: Text(t.common.ui.button.save)),
                             const SizedBox(width: 7),
-                            favoriteButton,
+                            Button(
+                                variant: ButtonVariant.normal,
+                                onPressed: () =>
+                                    setState(() => _editingTarget = null),
+                                child: const Text('取消')),
                             const Spacer(),
-                            editButton,
-                            const SizedBox(width: 7),
-                            compareToggle,
+                            Text(
+                              t.workbench.history_page.edit_history_hint,
+                              style: vars.sansStyle(
+                                fontSize: 11,
+                                height: 1,
+                                color: vars.colorContentSubtle,
+                              ),
+                            ),
                           ],
-                        ),
+                        )
+                      : stacked
+                          // 编辑 and 对比 are this target's: the editing row unfolds
+                          // here and the list opens under this block. 收藏 belongs
+                          // to the paragraph, so it sits once, at the foot of the set.
+                          ? Row(
+                              children: [
+                                if (last) favoriteButton,
+                                const Spacer(),
+                                editButton,
+                                const SizedBox(width: 7),
+                                compareToggle,
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                Button(
+                                    variant: ButtonVariant.filled,
+                                    onPressed: shownText.isNotEmpty
+                                        ? () => _copyResult(target, shownText)
+                                        : null,
+                                    child: Text(
+                                      copied
+                                          ? translation.copied
+                                          : translation.copy_result,
+                                    )),
+                                const SizedBox(width: 7),
+                                favoriteButton,
+                                const Spacer(),
+                                editButton,
+                                const SizedBox(width: 7),
+                                compareToggle,
+                              ],
+                            ),
       // 展开对比 — the other services, each target its own: listed are the
       // other services' renderings into this language. The list stays in
       // the block, on the same tinted surface; a separate grey band would
@@ -813,65 +807,71 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
                       style:
                           vars.translationStyle(color: vars.colorContentSubtle),
                     )
-                  : editing
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: vars.colorSurface,
-                            border: Border.all(color: vars.accent),
-                            borderRadius:
-                                BorderRadius.circular(vars.radiusLarge),
-                            boxShadow: [
-                              BoxShadow(
-                                  color: vars.accentRing, spreadRadius: 3),
-                            ],
-                          ),
-                          child: PlainTextField(
-                            controller: _draftController,
-                            // The box around it already carries the inset.
-                            padding: EdgeInsets.zero,
-                            style:
-                                vars.translationStyle(color: vars.colorContent),
-                            // `rows={3}` in the deck.
-                            minLines: 3,
-                            maxLines: 8,
-                          ),
+                  : failure != null
+                      ? Text(
+                          _reasonOf(failure),
+                          style: vars.translationStyle(color: vars.dangerFg),
                         )
-                      : override != null
-                          ? Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(text: '$override '),
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: Badge(
-                                        size: WidgetSize.tiny,
-                                        child: Text(
-                                          t.workbench.history_page.edited_flag,
-                                        )),
-                                  ),
+                      : editing
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: vars.colorSurface,
+                                border: Border.all(color: vars.accent),
+                                borderRadius:
+                                    BorderRadius.circular(vars.radiusLarge),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: vars.accentRing, spreadRadius: 3),
                                 ],
                               ),
-                              style: vars.translationStyle(
-                                  color: vars.colorContent),
+                              child: PlainTextField(
+                                controller: _draftController,
+                                // The box around it already carries the inset.
+                                padding: EdgeInsets.zero,
+                                style: vars.translationStyle(
+                                    color: vars.colorContent),
+                                // `rows={3}` in the deck.
+                                minLines: 3,
+                                maxLines: 8,
+                              ),
                             )
-                          : TranslationText(
-                              text,
-                              style: vars.translationStyle(
-                                  color: vars.colorContent),
-                            ),
+                          : override != null
+                              ? Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(text: '$override '),
+                                      WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: Badge(
+                                            size: WidgetSize.tiny,
+                                            child: Text(
+                                              t.workbench.history_page
+                                                  .edited_flag,
+                                            )),
+                                      ),
+                                    ],
+                                  ),
+                                  style: vars.translationStyle(
+                                      color: vars.colorContent),
+                                )
+                              : TranslationText(
+                                  text,
+                                  style: vars.translationStyle(
+                                      color: vars.colorContent),
+                                ),
     );
   }
 
-  static String _serviceName(WorkbenchServiceResult result) =>
+  static String _serviceName(TranslationServiceResult result) =>
       serviceDisplayName(result.service);
 
   /// One other service's rendering into [target] — its row in that target's
   /// compare list.
   Widget _buildCandidateRow(
     BuildContext context,
-    WorkbenchServiceResult result,
+    TranslationServiceResult result,
     String target,
   ) {
     final vars = context.vars;
@@ -881,23 +881,26 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
     return CandidateRow(
       name: _serviceName(result),
       providerType: result.provider?.type,
-      child: output.loading
-          ? Text(
-              translation.translating,
+      // Opening the list is what asks these services, so a row starts as
+      // 翻译中 and settles into the translation that came back, or the reason
+      // it did not.
+      child: output.hasText
+          ? TranslationText(
+              output.text,
               style: vars.cjkStyle(
                 fontSize: 13,
                 height: 1.7,
-                color: vars.colorContentFaint,
+                color: vars.colorContentSecondary,
               ),
             )
-          : output.error != null && !output.hasText
+          : output.failed
               ? _buildErrorBody(context, output.error)
-              : TranslationText(
-                  output.hasText ? output.text : translation.waiting,
+              : Text(
+                  translation.translating,
                   style: vars.cjkStyle(
                     fontSize: 13,
                     height: 1.7,
-                    color: vars.colorContentSecondary,
+                    color: vars.colorContentFaint,
                   ),
                 ),
     );
@@ -927,7 +930,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   /// the foot the fix instead of 设为首选.
   Widget _buildFailureList(BuildContext context) {
     if (!_expanded) return const SizedBox.shrink();
-    final entries = _controller.results;
+    final entries = _controller.query?.failures ?? const <TranslationFailure>[];
     if (entries.isEmpty) return const SizedBox.shrink();
 
     return Padding(
@@ -944,11 +947,11 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
     );
   }
 
-  Widget _buildFailureCard(
-      BuildContext context, WorkbenchServiceResult result) {
+  Widget _buildFailureCard(BuildContext context, TranslationFailure failure) {
     final vars = context.vars;
+    final result = failure.result;
     final name = _serviceName(result);
-    final missing = SystemLanguageNotInstalled.of(result.error);
+    final missing = failure.output.missingLanguage;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -975,7 +978,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
           Text(
             missing != null
                 ? MissingLanguageText.sentence(missing)
-                : _reasonOf(result),
+                : _reasonOf(failure.output),
             style: vars.sansStyle(
               fontSize: 12,
               height: 1.7,
@@ -1078,7 +1081,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   }
 
   String? get _definitionText {
-    final response = _controller.dictionaryResult;
+    final response = _controller.query?.dictionary;
     if (response == null) return null;
     if (response.translations.isNotEmpty) {
       return response.translations.map((item) => item.text).join('；');
@@ -1091,7 +1094,7 @@ class _WorkbenchTranslationPageState extends State<WorkbenchTranslationPage> {
   }
 
   String? get _pronunciation {
-    final pronunciations = _controller.dictionaryResult?.pronunciations;
+    final pronunciations = _controller.query?.dictionary?.pronunciations;
     if (pronunciations == null || pronunciations.isEmpty) return null;
     return pronunciations.first.phoneticSymbol;
   }

@@ -608,6 +608,16 @@ public protocol RuntimeProtocol: AnyObject, Sendable {
 
   func translation(providerId: String) throws -> RuntimeTranslation
 
+  /**
+   * The translation backend a window runs on — see [`RuntimeTranslationSession`].
+   *
+   * `initial_target_language` stands behind 自动匹配 until a configured
+   * target or a query resolves it; `dictionary_enabled` says whether a
+   * submit also runs the first dictionary service.
+   */
+  func translationSession(initialTargetLanguage: String, dictionaryEnabled: Bool)
+    -> RuntimeTranslationSession
+
 }
 open class Runtime: RuntimeProtocol, @unchecked Sendable {
   fileprivate let handle: UInt64
@@ -783,6 +793,26 @@ open class Runtime: RuntimeProtocol, @unchecked Sendable {
         uniffi_beyondtranslate_runtime_fn_method_runtime_translation(
           self.uniffiCloneHandle(),
           FfiConverterString.lower(providerId), $0
+        )
+      })
+  }
+
+  /**
+   * The translation backend a window runs on — see [`RuntimeTranslationSession`].
+   *
+   * `initial_target_language` stands behind 自动匹配 until a configured
+   * target or a query resolves it; `dictionary_enabled` says whether a
+   * submit also runs the first dictionary service.
+   */
+  open func translationSession(initialTargetLanguage: String, dictionaryEnabled: Bool)
+    -> RuntimeTranslationSession
+  {
+    return try! FfiConverterTypeRuntimeTranslationSession_lift(
+      try! rustCall {
+        uniffi_beyondtranslate_runtime_fn_method_runtime_translation_session(
+          self.uniffiCloneHandle(),
+          FfiConverterString.lower(initialTargetLanguage),
+          FfiConverterBool.lower(dictionaryEnabled), $0
         )
       })
   }
@@ -3098,6 +3128,392 @@ public func FfiConverterTypeRuntimeTranslation_lift(_ handle: UInt64) throws -> 
 #endif
 public func FfiConverterTypeRuntimeTranslation_lower(_ value: RuntimeTranslation) -> UInt64 {
   return FfiConverterTypeRuntimeTranslation.lower(value)
+}
+
+/// The translation backend a window runs on — see the module docs.
+public protocol RuntimeTranslationSessionProtocol: AnyObject, Sendable {
+
+  /**
+   * 清空 — drops the text, the query and its history entry; in-flight
+   * requests land nowhere.
+   */
+  func clear()
+
+  /**
+   * 对比 — asks the services the submit skipped for `target`, each once
+   * per query.
+   */
+  func compare(target: String) async
+
+  /**
+   * Loads the roster. The capsule starts on 自动检测 ⇄ 自动匹配; the first
+   * enabled configured target is what stands behind 自动匹配 until a query
+   * resolves it.
+   */
+  func initialize() async
+
+  /**
+   * Records the query in history — the first target's translation, by the
+   * service whose block shows it. `override_text` is the user's own edit of
+   * that translation; `edited` marks the entry as such.
+   */
+  func saveHistory(overrideText: String?, edited: Bool) async
+
+  /**
+   * Picks a configured target as the pair; an `index` out of range goes
+   * back to 自动检测 ⇄ 自动匹配.
+   */
+  func selectConfiguredTarget(index: Int32) async
+
+  /**
+   * Who to tell when the state changes. One listener at a time: the
+   * window that owns the session.
+   */
+  func setListener(listener: TranslationSessionListener)
+
+  /**
+   * What the window calls each service — the history entry carries the
+   * name the user saw.
+   */
+  func setServiceNames(names: [String: String])
+
+  /**
+   * Picking a source on its own is a pair of the user's making: it clears
+   * the configured pick.
+   */
+  func setSourceLanguage(language: String)
+
+  /**
+   * `None` is 自动匹配.
+   */
+  func setTargetLanguage(language: String?)
+
+  func setText(text: String)
+
+  func state() -> TranslationSessionState
+
+  /**
+   * Runs the query; returns once every request it sent has landed.
+   */
+  func submit() async
+
+  /**
+   * 收藏 — saves the entry first if the query has none yet.
+   */
+  func toggleFavorite(overrideText: String?, edited: Bool) async
+
+}
+/// The translation backend a window runs on — see the module docs.
+open class RuntimeTranslationSession: RuntimeTranslationSessionProtocol, @unchecked Sendable {
+  fileprivate let handle: UInt64
+
+  /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public struct NoHandle {
+    public init() {}
+  }
+
+  // TODO: We'd like this to be `private` but for Swifty reasons,
+  // we can't implement `FfiConverter` without making this `required` and we can't
+  // make it `required` without making it `public`.
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  required public init(unsafeFromHandle handle: UInt64) {
+    self.handle = handle
+  }
+
+  // This constructor can be used to instantiate a fake object.
+  // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+  //
+  // - Warning:
+  //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public init(noHandle: NoHandle) {
+    self.handle = 0
+  }
+
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public func uniffiCloneHandle() -> UInt64 {
+    return try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_clone_runtimetranslationsession(self.handle, $0)
+    }
+  }
+  // No primary constructor declared for this class.
+
+  deinit {
+    if handle == 0 {
+      // Mock objects have handle=0 don't try to free them
+      return
+    }
+
+    try! rustCall { uniffi_beyondtranslate_runtime_fn_free_runtimetranslationsession(handle, $0) }
+  }
+
+  /**
+   * 清空 — drops the text, the query and its history entry; in-flight
+   * requests land nowhere.
+   */
+  open func clear() {
+    try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_clear(
+        self.uniffiCloneHandle(), $0
+      )
+    }
+  }
+
+  /**
+   * 对比 — asks the services the submit skipped for `target`, each once
+   * per query.
+   */
+  open func compare(target: String) async {
+    return
+      try! await uniffiRustCallAsync(
+        rustFutureFunc: {
+          uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_compare(
+            self.uniffiCloneHandle(),
+            FfiConverterString.lower(target)
+          )
+        },
+        pollFunc: ffi_beyondtranslate_runtime_rust_future_poll_void,
+        completeFunc: ffi_beyondtranslate_runtime_rust_future_complete_void,
+        freeFunc: ffi_beyondtranslate_runtime_rust_future_free_void,
+        liftFunc: { $0 },
+        errorHandler: nil
+
+      )
+  }
+
+  /**
+   * Loads the roster. The capsule starts on 自动检测 ⇄ 自动匹配; the first
+   * enabled configured target is what stands behind 自动匹配 until a query
+   * resolves it.
+   */
+  open func initialize() async {
+    return
+      try! await uniffiRustCallAsync(
+        rustFutureFunc: {
+          uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_initialize(
+            self.uniffiCloneHandle()
+
+          )
+        },
+        pollFunc: ffi_beyondtranslate_runtime_rust_future_poll_void,
+        completeFunc: ffi_beyondtranslate_runtime_rust_future_complete_void,
+        freeFunc: ffi_beyondtranslate_runtime_rust_future_free_void,
+        liftFunc: { $0 },
+        errorHandler: nil
+
+      )
+  }
+
+  /**
+   * Records the query in history — the first target's translation, by the
+   * service whose block shows it. `override_text` is the user's own edit of
+   * that translation; `edited` marks the entry as such.
+   */
+  open func saveHistory(overrideText: String?, edited: Bool) async {
+    return
+      try! await uniffiRustCallAsync(
+        rustFutureFunc: {
+          uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_save_history(
+            self.uniffiCloneHandle(),
+            FfiConverterOptionString.lower(overrideText), FfiConverterBool.lower(edited)
+          )
+        },
+        pollFunc: ffi_beyondtranslate_runtime_rust_future_poll_void,
+        completeFunc: ffi_beyondtranslate_runtime_rust_future_complete_void,
+        freeFunc: ffi_beyondtranslate_runtime_rust_future_free_void,
+        liftFunc: { $0 },
+        errorHandler: nil
+
+      )
+  }
+
+  /**
+   * Picks a configured target as the pair; an `index` out of range goes
+   * back to 自动检测 ⇄ 自动匹配.
+   */
+  open func selectConfiguredTarget(index: Int32) async {
+    return
+      try! await uniffiRustCallAsync(
+        rustFutureFunc: {
+          uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_select_configured_target(
+            self.uniffiCloneHandle(),
+            FfiConverterInt32.lower(index)
+          )
+        },
+        pollFunc: ffi_beyondtranslate_runtime_rust_future_poll_void,
+        completeFunc: ffi_beyondtranslate_runtime_rust_future_complete_void,
+        freeFunc: ffi_beyondtranslate_runtime_rust_future_free_void,
+        liftFunc: { $0 },
+        errorHandler: nil
+
+      )
+  }
+
+  /**
+   * Who to tell when the state changes. One listener at a time: the
+   * window that owns the session.
+   */
+  open func setListener(listener: TranslationSessionListener) {
+    try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_set_listener(
+        self.uniffiCloneHandle(),
+        FfiConverterCallbackInterfaceTranslationSessionListener_lower(listener), $0
+      )
+    }
+  }
+
+  /**
+   * What the window calls each service — the history entry carries the
+   * name the user saw.
+   */
+  open func setServiceNames(names: [String: String]) {
+    try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_set_service_names(
+        self.uniffiCloneHandle(),
+        FfiConverterDictionaryStringString.lower(names), $0
+      )
+    }
+  }
+
+  /**
+   * Picking a source on its own is a pair of the user's making: it clears
+   * the configured pick.
+   */
+  open func setSourceLanguage(language: String) {
+    try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_set_source_language(
+        self.uniffiCloneHandle(),
+        FfiConverterString.lower(language), $0
+      )
+    }
+  }
+
+  /**
+   * `None` is 自动匹配.
+   */
+  open func setTargetLanguage(language: String?) {
+    try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_set_target_language(
+        self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(language), $0
+      )
+    }
+  }
+
+  open func setText(text: String) {
+    try! rustCall {
+      uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_set_text(
+        self.uniffiCloneHandle(),
+        FfiConverterString.lower(text), $0
+      )
+    }
+  }
+
+  open func state() -> TranslationSessionState {
+    return try! FfiConverterTypeTranslationSessionState_lift(
+      try! rustCall {
+        uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_state(
+          self.uniffiCloneHandle(), $0
+        )
+      })
+  }
+
+  /**
+   * Runs the query; returns once every request it sent has landed.
+   */
+  open func submit() async {
+    return
+      try! await uniffiRustCallAsync(
+        rustFutureFunc: {
+          uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_submit(
+            self.uniffiCloneHandle()
+
+          )
+        },
+        pollFunc: ffi_beyondtranslate_runtime_rust_future_poll_void,
+        completeFunc: ffi_beyondtranslate_runtime_rust_future_complete_void,
+        freeFunc: ffi_beyondtranslate_runtime_rust_future_free_void,
+        liftFunc: { $0 },
+        errorHandler: nil
+
+      )
+  }
+
+  /**
+   * 收藏 — saves the entry first if the query has none yet.
+   */
+  open func toggleFavorite(overrideText: String?, edited: Bool) async {
+    return
+      try! await uniffiRustCallAsync(
+        rustFutureFunc: {
+          uniffi_beyondtranslate_runtime_fn_method_runtimetranslationsession_toggle_favorite(
+            self.uniffiCloneHandle(),
+            FfiConverterOptionString.lower(overrideText), FfiConverterBool.lower(edited)
+          )
+        },
+        pollFunc: ffi_beyondtranslate_runtime_rust_future_poll_void,
+        completeFunc: ffi_beyondtranslate_runtime_rust_future_complete_void,
+        freeFunc: ffi_beyondtranslate_runtime_rust_future_free_void,
+        liftFunc: { $0 },
+        errorHandler: nil
+
+      )
+  }
+
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRuntimeTranslationSession: FfiConverter {
+  typealias FfiType = UInt64
+  typealias SwiftType = RuntimeTranslationSession
+
+  public static func lift(_ handle: UInt64) throws -> RuntimeTranslationSession {
+    return RuntimeTranslationSession(unsafeFromHandle: handle)
+  }
+
+  public static func lower(_ value: RuntimeTranslationSession) -> UInt64 {
+    return value.uniffiCloneHandle()
+  }
+
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> RuntimeTranslationSession
+  {
+    let handle: UInt64 = try readInt(&buf)
+    return try lift(handle)
+  }
+
+  public static func write(_ value: RuntimeTranslationSession, into buf: inout [UInt8]) {
+    writeInt(&buf, lower(value))
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRuntimeTranslationSession_lift(_ handle: UInt64) throws
+  -> RuntimeTranslationSession
+{
+  return try FfiConverterTypeRuntimeTranslationSession.lift(handle)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRuntimeTranslationSession_lower(_ value: RuntimeTranslationSession)
+  -> UInt64
+{
+  return FfiConverterTypeRuntimeTranslationSession.lower(value)
 }
 
 /// Foreign-language handle for observing [`SettingsChange`] events.
@@ -5841,6 +6257,612 @@ public func FfiConverterTypeTranslateResponse_lower(_ value: TranslateResponse) 
   return FfiConverterTypeTranslateResponse.lower(value)
 }
 
+/// What a target's block shows: which service it speaks for, and that
+/// service's translation once it has one.
+public struct TranslationBlockState: Equatable, Hashable {
+  public var target: String
+  public var serviceId: String?
+  public var preferredText: String?
+
+  // Default memberwise initializers are never public by default, so we
+  // declare one manually.
+  public init(target: String, serviceId: String?, preferredText: String?) {
+    self.target = target
+    self.serviceId = serviceId
+    self.preferredText = preferredText
+  }
+
+}
+
+#if compiler(>=6)
+  extension TranslationBlockState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranslationBlockState: FfiConverterRustBuffer {
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> TranslationBlockState
+  {
+    return
+      try TranslationBlockState(
+        target: FfiConverterString.read(from: &buf),
+        serviceId: FfiConverterOptionString.read(from: &buf),
+        preferredText: FfiConverterOptionString.read(from: &buf)
+      )
+  }
+
+  public static func write(_ value: TranslationBlockState, into buf: inout [UInt8]) {
+    FfiConverterString.write(value.target, into: &buf)
+    FfiConverterOptionString.write(value.serviceId, into: &buf)
+    FfiConverterOptionString.write(value.preferredText, into: &buf)
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationBlockState_lift(_ buf: RustBuffer) throws
+  -> TranslationBlockState
+{
+  return try FfiConverterTypeTranslationBlockState.lift(buf)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationBlockState_lower(_ value: TranslationBlockState)
+  -> RustBuffer
+{
+  return FfiConverterTypeTranslationBlockState.lower(value)
+}
+
+/// What one service made of one target. 自动匹配 can ask for several languages
+/// at once, and each keeps its own text, error and in-flight flag.
+///
+/// A service is only asked when a request actually goes out — on submit for
+/// the default service, when 对比 opens for the rest — so an output that was
+/// never `asked` is idle, not pending.
+public struct TranslationOutputState: Equatable, Hashable {
+  public var target: String
+  /**
+   * A request went out for this output.
+   */
+  public var asked: Bool
+  /**
+   * The request is still in flight.
+   */
+  public var loading: Bool
+  public var text: String
+  public var audioUrl: String?
+  /**
+   * Why the service came back empty, as it put it. An empty string means
+   * it answered with nothing and gave no reason.
+   */
+  public var error: String?
+  /**
+   * Asked, and nothing has come back yet — the block's spinner. An LLM
+   * that has started streaming has text, and shows it.
+   */
+  public var translating: Bool
+  /**
+   * Asked, settled, and nothing to show: the service gave a reason instead.
+   */
+  public var failed: Bool
+  /**
+   * 系统翻译 without this pair's language files — the one failure the UI
+   * can point at a fix for.
+   */
+  public var missingLanguage: Bool
+
+  // Default memberwise initializers are never public by default, so we
+  // declare one manually.
+  public init(
+    target: String,
+    /**
+     * A request went out for this output.
+     */
+    asked: Bool,
+    /**
+     * The request is still in flight.
+     */
+    loading: Bool, text: String, audioUrl: String?,
+    /**
+     * Why the service came back empty, as it put it. An empty string means
+     * it answered with nothing and gave no reason.
+     */
+    error: String?,
+    /**
+     * Asked, and nothing has come back yet — the block's spinner. An LLM
+     * that has started streaming has text, and shows it.
+     */
+    translating: Bool,
+    /**
+     * Asked, settled, and nothing to show: the service gave a reason instead.
+     */
+    failed: Bool,
+    /**
+     * 系统翻译 without this pair's language files — the one failure the UI
+     * can point at a fix for.
+     */
+    missingLanguage: Bool
+  ) {
+    self.target = target
+    self.asked = asked
+    self.loading = loading
+    self.text = text
+    self.audioUrl = audioUrl
+    self.error = error
+    self.translating = translating
+    self.failed = failed
+    self.missingLanguage = missingLanguage
+  }
+
+}
+
+#if compiler(>=6)
+  extension TranslationOutputState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranslationOutputState: FfiConverterRustBuffer {
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> TranslationOutputState
+  {
+    return
+      try TranslationOutputState(
+        target: FfiConverterString.read(from: &buf),
+        asked: FfiConverterBool.read(from: &buf),
+        loading: FfiConverterBool.read(from: &buf),
+        text: FfiConverterString.read(from: &buf),
+        audioUrl: FfiConverterOptionString.read(from: &buf),
+        error: FfiConverterOptionString.read(from: &buf),
+        translating: FfiConverterBool.read(from: &buf),
+        failed: FfiConverterBool.read(from: &buf),
+        missingLanguage: FfiConverterBool.read(from: &buf)
+      )
+  }
+
+  public static func write(_ value: TranslationOutputState, into buf: inout [UInt8]) {
+    FfiConverterString.write(value.target, into: &buf)
+    FfiConverterBool.write(value.asked, into: &buf)
+    FfiConverterBool.write(value.loading, into: &buf)
+    FfiConverterString.write(value.text, into: &buf)
+    FfiConverterOptionString.write(value.audioUrl, into: &buf)
+    FfiConverterOptionString.write(value.error, into: &buf)
+    FfiConverterBool.write(value.translating, into: &buf)
+    FfiConverterBool.write(value.failed, into: &buf)
+    FfiConverterBool.write(value.missingLanguage, into: &buf)
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationOutputState_lift(_ buf: RustBuffer) throws
+  -> TranslationOutputState
+{
+  return try FfiConverterTypeTranslationOutputState.lift(buf)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationOutputState_lower(_ value: TranslationOutputState)
+  -> RustBuffer
+{
+  return FfiConverterTypeTranslationOutputState.lower(value)
+}
+
+/// One submitted query: the text, the targets it resolved to, what every
+/// enabled translation service made of each, the dictionary's answer — and
+/// what the windows derive from that, decided here, once.
+public struct TranslationQueryState: Equatable, Hashable {
+  /**
+   * The trimmed source text.
+   */
+  public var text: String
+  /**
+   * The languages translated into, in order. Never empty.
+   */
+  public var targets: [String]
+  /**
+   * Every enabled translation service, in 服务 order, asked or not.
+   */
+  public var results: [TranslationServiceResultState]
+  /**
+   * The service 设置 › 服务 marks 默认, if it is among `results`.
+   */
+  public var defaultServiceId: String?
+  /**
+   * The service a submit runs: the default, or with none marked, the
+   * first enabled one.
+   */
+  public var leadServiceId: String?
+  /**
+   * 词典 — the first dictionary service's answer for the first target.
+   */
+  public var dictionary: LookUpResponse?
+  /**
+   * One per target, in `targets` order.
+   */
+  public var blocks: [TranslationBlockState]
+  /**
+   * The first target that has a translation to show — what 复制 on the
+   * footer copies and what history records.
+   */
+  public var firstPreferredTarget: String?
+  /**
+   * Requests still in flight with nothing shown yet.
+   */
+  public var pendingCount: UInt32
+  /**
+   * One entry per service that failed on any target, in 服务 order.
+   */
+  public var failedServiceIds: [String]
+  /**
+   * 服务全部失效: nothing came back, nothing is pending, and something
+   * failed — unless what failed is 系统翻译 lacking the language files,
+   * which the target's own block reports, with the fix.
+   */
+  public var allFailed: Bool
+  /**
+   * 语言文件未下载 on every target: a failed query like 服务全部失效 —
+   * nothing to read, copy or star, and ⏎ is a retry.
+   */
+  public var allTargetsMissingLanguage: Bool
+
+  // Default memberwise initializers are never public by default, so we
+  // declare one manually.
+  public init(
+    /**
+     * The trimmed source text.
+     */
+    text: String,
+    /**
+     * The languages translated into, in order. Never empty.
+     */
+    targets: [String],
+    /**
+     * Every enabled translation service, in 服务 order, asked or not.
+     */
+    results: [TranslationServiceResultState],
+    /**
+     * The service 设置 › 服务 marks 默认, if it is among `results`.
+     */
+    defaultServiceId: String?,
+    /**
+     * The service a submit runs: the default, or with none marked, the
+     * first enabled one.
+     */
+    leadServiceId: String?,
+    /**
+     * 词典 — the first dictionary service's answer for the first target.
+     */
+    dictionary: LookUpResponse?,
+    /**
+     * One per target, in `targets` order.
+     */
+    blocks: [TranslationBlockState],
+    /**
+     * The first target that has a translation to show — what 复制 on the
+     * footer copies and what history records.
+     */
+    firstPreferredTarget: String?,
+    /**
+     * Requests still in flight with nothing shown yet.
+     */
+    pendingCount: UInt32,
+    /**
+     * One entry per service that failed on any target, in 服务 order.
+     */
+    failedServiceIds: [String],
+    /**
+     * 服务全部失效: nothing came back, nothing is pending, and something
+     * failed — unless what failed is 系统翻译 lacking the language files,
+     * which the target's own block reports, with the fix.
+     */
+    allFailed: Bool,
+    /**
+     * 语言文件未下载 on every target: a failed query like 服务全部失效 —
+     * nothing to read, copy or star, and ⏎ is a retry.
+     */
+    allTargetsMissingLanguage: Bool
+  ) {
+    self.text = text
+    self.targets = targets
+    self.results = results
+    self.defaultServiceId = defaultServiceId
+    self.leadServiceId = leadServiceId
+    self.dictionary = dictionary
+    self.blocks = blocks
+    self.firstPreferredTarget = firstPreferredTarget
+    self.pendingCount = pendingCount
+    self.failedServiceIds = failedServiceIds
+    self.allFailed = allFailed
+    self.allTargetsMissingLanguage = allTargetsMissingLanguage
+  }
+
+}
+
+#if compiler(>=6)
+  extension TranslationQueryState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranslationQueryState: FfiConverterRustBuffer {
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> TranslationQueryState
+  {
+    return
+      try TranslationQueryState(
+        text: FfiConverterString.read(from: &buf),
+        targets: FfiConverterSequenceString.read(from: &buf),
+        results: FfiConverterSequenceTypeTranslationServiceResultState.read(from: &buf),
+        defaultServiceId: FfiConverterOptionString.read(from: &buf),
+        leadServiceId: FfiConverterOptionString.read(from: &buf),
+        dictionary: FfiConverterOptionTypeLookUpResponse.read(from: &buf),
+        blocks: FfiConverterSequenceTypeTranslationBlockState.read(from: &buf),
+        firstPreferredTarget: FfiConverterOptionString.read(from: &buf),
+        pendingCount: FfiConverterUInt32.read(from: &buf),
+        failedServiceIds: FfiConverterSequenceString.read(from: &buf),
+        allFailed: FfiConverterBool.read(from: &buf),
+        allTargetsMissingLanguage: FfiConverterBool.read(from: &buf)
+      )
+  }
+
+  public static func write(_ value: TranslationQueryState, into buf: inout [UInt8]) {
+    FfiConverterString.write(value.text, into: &buf)
+    FfiConverterSequenceString.write(value.targets, into: &buf)
+    FfiConverterSequenceTypeTranslationServiceResultState.write(value.results, into: &buf)
+    FfiConverterOptionString.write(value.defaultServiceId, into: &buf)
+    FfiConverterOptionString.write(value.leadServiceId, into: &buf)
+    FfiConverterOptionTypeLookUpResponse.write(value.dictionary, into: &buf)
+    FfiConverterSequenceTypeTranslationBlockState.write(value.blocks, into: &buf)
+    FfiConverterOptionString.write(value.firstPreferredTarget, into: &buf)
+    FfiConverterUInt32.write(value.pendingCount, into: &buf)
+    FfiConverterSequenceString.write(value.failedServiceIds, into: &buf)
+    FfiConverterBool.write(value.allFailed, into: &buf)
+    FfiConverterBool.write(value.allTargetsMissingLanguage, into: &buf)
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationQueryState_lift(_ buf: RustBuffer) throws
+  -> TranslationQueryState
+{
+  return try FfiConverterTypeTranslationQueryState.lift(buf)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationQueryState_lower(_ value: TranslationQueryState)
+  -> RustBuffer
+{
+  return FfiConverterTypeTranslationQueryState.lower(value)
+}
+
+/// One service's outputs for one query, one per resolved target.
+public struct TranslationServiceResultState: Equatable, Hashable {
+  public var service: ServiceConfigEntry
+  public var provider: ProviderConfigEntry?
+  /**
+   * One output per target, in the order the targets were resolved.
+   */
+  public var outputs: [TranslationOutputState]
+
+  // Default memberwise initializers are never public by default, so we
+  // declare one manually.
+  public init(
+    service: ServiceConfigEntry, provider: ProviderConfigEntry?,
+    /**
+     * One output per target, in the order the targets were resolved.
+     */
+    outputs: [TranslationOutputState]
+  ) {
+    self.service = service
+    self.provider = provider
+    self.outputs = outputs
+  }
+
+}
+
+#if compiler(>=6)
+  extension TranslationServiceResultState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranslationServiceResultState: FfiConverterRustBuffer {
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> TranslationServiceResultState
+  {
+    return
+      try TranslationServiceResultState(
+        service: FfiConverterTypeServiceConfigEntry.read(from: &buf),
+        provider: FfiConverterOptionTypeProviderConfigEntry.read(from: &buf),
+        outputs: FfiConverterSequenceTypeTranslationOutputState.read(from: &buf)
+      )
+  }
+
+  public static func write(_ value: TranslationServiceResultState, into buf: inout [UInt8]) {
+    FfiConverterTypeServiceConfigEntry.write(value.service, into: &buf)
+    FfiConverterOptionTypeProviderConfigEntry.write(value.provider, into: &buf)
+    FfiConverterSequenceTypeTranslationOutputState.write(value.outputs, into: &buf)
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationServiceResultState_lift(_ buf: RustBuffer) throws
+  -> TranslationServiceResultState
+{
+  return try FfiConverterTypeTranslationServiceResultState.lift(buf)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationServiceResultState_lower(
+  _ value: TranslationServiceResultState
+) -> RustBuffer {
+  return FfiConverterTypeTranslationServiceResultState.lower(value)
+}
+
+/// Everything a window draws.
+public struct TranslationSessionState: Equatable, Hashable {
+  public var sourceLanguage: String
+  /**
+   * The target the user picked, or null for 自动匹配 — the target menu's
+   * first item, which hands the choice to the configured translation
+   * targets.
+   */
+  public var targetLanguage: String?
+  /**
+   * The configured target the menu picked as a pair, or -1.
+   */
+  public var configuredTargetIndex: Int32
+  /**
+   * The languages a submit actually translates into: the pick when there
+   * is one, otherwise whatever 自动匹配 resolved to last. Never empty.
+   */
+  public var effectiveTargets: [String]
+  public var detectedLanguage: String?
+  public var text: String
+  public var loadingServices: Bool
+  public var submitting: Bool
+  public var setupError: String?
+  /**
+   * Whether the query's history entry is 收藏.
+   */
+  public var starred: Bool
+  public var providers: [ProviderConfigEntry]
+  public var services: [ServiceConfigEntry]
+  /**
+   * The last submitted query, or null before the first (and after 清空).
+   */
+  public var query: TranslationQueryState?
+
+  // Default memberwise initializers are never public by default, so we
+  // declare one manually.
+  public init(
+    sourceLanguage: String,
+    /**
+     * The target the user picked, or null for 自动匹配 — the target menu's
+     * first item, which hands the choice to the configured translation
+     * targets.
+     */
+    targetLanguage: String?,
+    /**
+     * The configured target the menu picked as a pair, or -1.
+     */
+    configuredTargetIndex: Int32,
+    /**
+     * The languages a submit actually translates into: the pick when there
+     * is one, otherwise whatever 自动匹配 resolved to last. Never empty.
+     */
+    effectiveTargets: [String], detectedLanguage: String?, text: String, loadingServices: Bool,
+    submitting: Bool, setupError: String?,
+    /**
+     * Whether the query's history entry is 收藏.
+     */
+    starred: Bool, providers: [ProviderConfigEntry], services: [ServiceConfigEntry],
+    /**
+     * The last submitted query, or null before the first (and after 清空).
+     */
+    query: TranslationQueryState?
+  ) {
+    self.sourceLanguage = sourceLanguage
+    self.targetLanguage = targetLanguage
+    self.configuredTargetIndex = configuredTargetIndex
+    self.effectiveTargets = effectiveTargets
+    self.detectedLanguage = detectedLanguage
+    self.text = text
+    self.loadingServices = loadingServices
+    self.submitting = submitting
+    self.setupError = setupError
+    self.starred = starred
+    self.providers = providers
+    self.services = services
+    self.query = query
+  }
+
+}
+
+#if compiler(>=6)
+  extension TranslationSessionState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranslationSessionState: FfiConverterRustBuffer {
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> TranslationSessionState
+  {
+    return
+      try TranslationSessionState(
+        sourceLanguage: FfiConverterString.read(from: &buf),
+        targetLanguage: FfiConverterOptionString.read(from: &buf),
+        configuredTargetIndex: FfiConverterInt32.read(from: &buf),
+        effectiveTargets: FfiConverterSequenceString.read(from: &buf),
+        detectedLanguage: FfiConverterOptionString.read(from: &buf),
+        text: FfiConverterString.read(from: &buf),
+        loadingServices: FfiConverterBool.read(from: &buf),
+        submitting: FfiConverterBool.read(from: &buf),
+        setupError: FfiConverterOptionString.read(from: &buf),
+        starred: FfiConverterBool.read(from: &buf),
+        providers: FfiConverterSequenceTypeProviderConfigEntry.read(from: &buf),
+        services: FfiConverterSequenceTypeServiceConfigEntry.read(from: &buf),
+        query: FfiConverterOptionTypeTranslationQueryState.read(from: &buf)
+      )
+  }
+
+  public static func write(_ value: TranslationSessionState, into buf: inout [UInt8]) {
+    FfiConverterString.write(value.sourceLanguage, into: &buf)
+    FfiConverterOptionString.write(value.targetLanguage, into: &buf)
+    FfiConverterInt32.write(value.configuredTargetIndex, into: &buf)
+    FfiConverterSequenceString.write(value.effectiveTargets, into: &buf)
+    FfiConverterOptionString.write(value.detectedLanguage, into: &buf)
+    FfiConverterString.write(value.text, into: &buf)
+    FfiConverterBool.write(value.loadingServices, into: &buf)
+    FfiConverterBool.write(value.submitting, into: &buf)
+    FfiConverterOptionString.write(value.setupError, into: &buf)
+    FfiConverterBool.write(value.starred, into: &buf)
+    FfiConverterSequenceTypeProviderConfigEntry.write(value.providers, into: &buf)
+    FfiConverterSequenceTypeServiceConfigEntry.write(value.services, into: &buf)
+    FfiConverterOptionTypeTranslationQueryState.write(value.query, into: &buf)
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationSessionState_lift(_ buf: RustBuffer) throws
+  -> TranslationSessionState
+{
+  return try FfiConverterTypeTranslationSessionState.lift(buf)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranslationSessionState_lower(_ value: TranslationSessionState)
+  -> RustBuffer
+{
+  return FfiConverterTypeTranslationSessionState.lower(value)
+}
+
 public struct TranslationTarget: Equatable, Hashable {
   public var source: String
   public var target: String
@@ -7248,6 +8270,150 @@ public func FfiConverterCallbackInterfaceStreamCallback_lower(_ v: StreamCallbac
   return FfiConverterCallbackInterfaceStreamCallback.lower(v)
 }
 
+/// Told when the session's state changed; read [`RuntimeTranslationSession::state`]
+/// for what it is now.
+public protocol TranslationSessionListener: AnyObject, Sendable {
+
+  func onChange()
+
+}
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+private struct UniffiCallbackInterfaceTranslationSessionListener {
+
+  // Create the VTable using a series of closures.
+  // Swift automatically converts these into C callback functions.
+  //
+  // Store the vtable directly.
+  static let vtable: UniffiVTableCallbackInterfaceTranslationSessionListener =
+    UniffiVTableCallbackInterfaceTranslationSessionListener(
+      uniffiFree: { (uniffiHandle: UInt64) -> Void in
+        do {
+          try FfiConverterCallbackInterfaceTranslationSessionListener.handleMap.remove(
+            handle: uniffiHandle)
+        } catch {
+          print(
+            "Uniffi callback interface TranslationSessionListener: handle missing in uniffiFree")
+        }
+      },
+      uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+        do {
+          return try FfiConverterCallbackInterfaceTranslationSessionListener.handleMap.clone(
+            handle: uniffiHandle)
+        } catch {
+          fatalError(
+            "Uniffi callback interface TranslationSessionListener: handle missing in uniffiClone")
+        }
+      },
+      onChange: {
+        (
+          uniffiHandle: UInt64,
+          uniffiOutReturn: UnsafeMutableRawPointer,
+          uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+        let makeCall = {
+          () throws -> Void in
+          guard
+            let uniffiObj = try? FfiConverterCallbackInterfaceTranslationSessionListener.handleMap
+              .get(handle: uniffiHandle)
+          else {
+            throw UniffiInternalError.unexpectedStaleHandle
+          }
+          return uniffiObj.onChange()
+        }
+
+        let writeReturn = { () }
+        uniffiTraitInterfaceCall(
+          callStatus: uniffiCallStatus,
+          makeCall: makeCall,
+          writeReturn: writeReturn
+        )
+      }
+    )
+
+  // Rust stores this pointer for future callback invocations, so it must live
+  // for the process lifetime (not just for the init function call).
+  //
+  // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+  // This is safe because the pointee is initialized once during static init
+  // and never mutated by either side of the FFI.  Its fields are C function pointers.
+  nonisolated(unsafe) static let vtablePtr:
+    UnsafePointer<UniffiVTableCallbackInterfaceTranslationSessionListener> = {
+      let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceTranslationSessionListener>
+        .allocate(capacity: 1)
+      ptr.initialize(to: vtable)
+      return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitTranslationSessionListener() {
+  uniffi_beyondtranslate_runtime_fn_init_callback_vtable_translationsessionlistener(
+    UniffiCallbackInterfaceTranslationSessionListener.vtablePtr)
+}
+
+// FfiConverter protocol for callback interfaces
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+private struct FfiConverterCallbackInterfaceTranslationSessionListener {
+  fileprivate static let handleMap = UniffiHandleMap<TranslationSessionListener>()
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+extension FfiConverterCallbackInterfaceTranslationSessionListener: FfiConverter {
+  typealias SwiftType = TranslationSessionListener
+  typealias FfiType = UInt64
+
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public static func lift(_ handle: UInt64) throws -> SwiftType {
+    try handleMap.get(handle: handle)
+  }
+
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    let handle: UInt64 = try readInt(&buf)
+    return try lift(handle)
+  }
+
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public static func lower(_ v: SwiftType) -> UInt64 {
+    return handleMap.insert(obj: v)
+  }
+
+  #if swift(>=5.8)
+    @_documentation(visibility: private)
+  #endif
+  public static func write(_ v: SwiftType, into buf: inout [UInt8]) {
+    writeInt(&buf, lower(v))
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterCallbackInterfaceTranslationSessionListener_lift(_ handle: UInt64) throws
+  -> TranslationSessionListener
+{
+  return try FfiConverterCallbackInterfaceTranslationSessionListener.lift(handle)
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+public func FfiConverterCallbackInterfaceTranslationSessionListener_lower(
+  _ v: TranslationSessionListener
+) -> UInt64 {
+  return FfiConverterCallbackInterfaceTranslationSessionListener.lower(v)
+}
+
 #if swift(>=5.8)
   @_documentation(visibility: private)
 #endif
@@ -7443,6 +8609,30 @@ private struct FfiConverterOptionTypeHistoryEntry: FfiConverterRustBuffer {
 #if swift(>=5.8)
   @_documentation(visibility: private)
 #endif
+private struct FfiConverterOptionTypeLookUpResponse: FfiConverterRustBuffer {
+  typealias SwiftType = LookUpResponse?
+
+  public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    guard let value = value else {
+      writeInt(&buf, Int8(0))
+      return
+    }
+    writeInt(&buf, Int8(1))
+    FfiConverterTypeLookUpResponse.write(value, into: &buf)
+  }
+
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    switch try readInt(&buf) as Int8 {
+    case 0: return nil
+    case 1: return try FfiConverterTypeLookUpResponse.read(from: &buf)
+    default: throw UniffiInternalError.unexpectedOptionalTag
+    }
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
 private struct FfiConverterOptionTypeProviderConfigEntry: FfiConverterRustBuffer {
   typealias SwiftType = ProviderConfigEntry?
 
@@ -7507,6 +8697,30 @@ private struct FfiConverterOptionTypeServiceConfigEntry: FfiConverterRustBuffer 
     switch try readInt(&buf) as Int8 {
     case 0: return nil
     case 1: return try FfiConverterTypeServiceConfigEntry.read(from: &buf)
+    default: throw UniffiInternalError.unexpectedOptionalTag
+    }
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+private struct FfiConverterOptionTypeTranslationQueryState: FfiConverterRustBuffer {
+  typealias SwiftType = TranslationQueryState?
+
+  public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    guard let value = value else {
+      writeInt(&buf, Int8(0))
+      return
+    }
+    writeInt(&buf, Int8(1))
+    FfiConverterTypeTranslationQueryState.write(value, into: &buf)
+  }
+
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    switch try readInt(&buf) as Int8 {
+    case 0: return nil
+    case 1: return try FfiConverterTypeTranslationQueryState.read(from: &buf)
     default: throw UniffiInternalError.unexpectedOptionalTag
     }
   }
@@ -8272,6 +9486,87 @@ private struct FfiConverterSequenceTypeTextTranslation: FfiConverterRustBuffer {
 #if swift(>=5.8)
   @_documentation(visibility: private)
 #endif
+private struct FfiConverterSequenceTypeTranslationBlockState: FfiConverterRustBuffer {
+  typealias SwiftType = [TranslationBlockState]
+
+  public static func write(_ value: [TranslationBlockState], into buf: inout [UInt8]) {
+    let len = Int32(value.count)
+    writeInt(&buf, len)
+    for item in value {
+      FfiConverterTypeTranslationBlockState.write(item, into: &buf)
+    }
+  }
+
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> [TranslationBlockState]
+  {
+    let len: Int32 = try readInt(&buf)
+    var seq = [TranslationBlockState]()
+    seq.reserveCapacity(Int(len))
+    for _ in 0..<len {
+      seq.append(try FfiConverterTypeTranslationBlockState.read(from: &buf))
+    }
+    return seq
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypeTranslationOutputState: FfiConverterRustBuffer {
+  typealias SwiftType = [TranslationOutputState]
+
+  public static func write(_ value: [TranslationOutputState], into buf: inout [UInt8]) {
+    let len = Int32(value.count)
+    writeInt(&buf, len)
+    for item in value {
+      FfiConverterTypeTranslationOutputState.write(item, into: &buf)
+    }
+  }
+
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> [TranslationOutputState]
+  {
+    let len: Int32 = try readInt(&buf)
+    var seq = [TranslationOutputState]()
+    seq.reserveCapacity(Int(len))
+    for _ in 0..<len {
+      seq.append(try FfiConverterTypeTranslationOutputState.read(from: &buf))
+    }
+    return seq
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
+private struct FfiConverterSequenceTypeTranslationServiceResultState: FfiConverterRustBuffer {
+  typealias SwiftType = [TranslationServiceResultState]
+
+  public static func write(_ value: [TranslationServiceResultState], into buf: inout [UInt8]) {
+    let len = Int32(value.count)
+    writeInt(&buf, len)
+    for item in value {
+      FfiConverterTypeTranslationServiceResultState.write(item, into: &buf)
+    }
+  }
+
+  public static func read(from buf: inout (data: Data, offset: Data.Index)) throws
+    -> [TranslationServiceResultState]
+  {
+    let len: Int32 = try readInt(&buf)
+    var seq = [TranslationServiceResultState]()
+    seq.reserveCapacity(Int(len))
+    for _ in 0..<len {
+      seq.append(try FfiConverterTypeTranslationServiceResultState.read(from: &buf))
+    }
+    return seq
+  }
+}
+
+#if swift(>=5.8)
+  @_documentation(visibility: private)
+#endif
 private struct FfiConverterSequenceTypeTranslationTarget: FfiConverterRustBuffer {
   typealias SwiftType = [TranslationTarget]
 
@@ -8939,6 +10234,9 @@ private let initializationResult: InitializationResult = {
   if uniffi_beyondtranslate_runtime_checksum_method_runtime_translation() != 36886 {
     return InitializationResult.apiChecksumMismatch
   }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtime_translation_session() != 59625 {
+    return InitializationResult.apiChecksumMismatch
+  }
   if uniffi_beyondtranslate_runtime_checksum_method_runtimedictionary_lookup() != 64628 {
     return InitializationResult.apiChecksumMismatch
   }
@@ -9123,6 +10421,59 @@ private let initializationResult: InitializationResult = {
   if uniffi_beyondtranslate_runtime_checksum_method_settingssubscription_next() != 20677 {
     return InitializationResult.apiChecksumMismatch
   }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_clear() != 16549 {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_compare() != 63710 {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_initialize() != 55639
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_save_history()
+    != 44340
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_select_configured_target()
+    != 14067
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_set_listener() != 8353
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_set_service_names()
+    != 11510
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_set_source_language()
+    != 50525
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_set_target_language()
+    != 20822
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_set_text() != 43959 {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_state() != 17825 {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_submit() != 42181 {
+    return InitializationResult.apiChecksumMismatch
+  }
+  if uniffi_beyondtranslate_runtime_checksum_method_runtimetranslationsession_toggle_favorite()
+    != 37494
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
   if uniffi_beyondtranslate_runtime_checksum_constructor_runtime_new() != 50884 {
     return InitializationResult.apiChecksumMismatch
   }
@@ -9135,8 +10486,13 @@ private let initializationResult: InitializationResult = {
   if uniffi_beyondtranslate_runtime_checksum_method_streamcallback_on_error() != 63263 {
     return InitializationResult.apiChecksumMismatch
   }
+  if uniffi_beyondtranslate_runtime_checksum_method_translationsessionlistener_on_change() != 62976
+  {
+    return InitializationResult.apiChecksumMismatch
+  }
 
   uniffiCallbackInitStreamCallback()
+  uniffiCallbackInitTranslationSessionListener()
   return InitializationResult.ok
 }()
 

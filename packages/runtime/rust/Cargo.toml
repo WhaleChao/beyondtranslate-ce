@@ -15,10 +15,12 @@ uniffi = { version = "=0.31.2", features = ["cli"] }
 uniffi-dart = { git = "https://github.com/Uniffi-Dart/uniffi-dart.git", branch = "main" }
 aho-corasick.workspace = true
 anyhow = "1"
+async-trait.workspace = true
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 base64.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
 camino = "1"
+futures = "0.3"
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

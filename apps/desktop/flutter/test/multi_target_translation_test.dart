@@ -1,10 +1,9 @@
 import 'package:beyondtranslate_desktop/src/i18n/i18n.dart';
-import 'package:beyondtranslate_desktop/src/models/translation_result.dart';
-import 'package:beyondtranslate_desktop/src/models/translation_result_record.dart';
 import 'package:beyondtranslate_desktop/src/routes/mini_translator/translation_input_view.dart';
 import 'package:beyondtranslate_desktop/src/routes/mini_translator/translation_results_view.dart';
-import 'package:beyondtranslate_desktop/src/services/runtime.dart'
-    show TranslationError;
+import 'package:beyondtranslate_desktop/src/services/system_translation.dart'
+    show SystemLanguageNotInstalled;
+import 'package:beyondtranslate_desktop/src/services/translation_controller.dart';
 import 'package:beyondtranslate_desktop/src/utils/language_util.dart';
 import 'package:beyondtranslate_desktop/src/utils/shortcut_util.dart';
 import 'package:beyondtranslate_desktop/src/widgets/block_heading.dart';
@@ -166,28 +165,135 @@ void main() {
   });
 
   group('MiniTranslatorTranslation', () {
-    TranslationResult result(String target, Map<String, String?> texts) {
-      return TranslationResult(
-        translationTarget: TranslationTarget(
-          source: kAutoSource,
+    ServiceConfigEntry service(String id, String name) => ServiceConfigEntry(
+          id: id,
+          providerId: '$id-provider',
+          type: ServiceType.translation,
+          name: name,
+          fields: const {},
+        );
+    final services = [service('builtin', '内置模型'), service('claude', 'Claude')];
+
+    /// A query over both services, one block per `(target, texts)`: a service
+    /// absent from `texts` was never asked, `null` is still in flight, and
+    /// `ERR:` is the reason it gave.
+    ///
+    /// The runtime derives the block and failure fields; the view only reads
+    /// them, so the fixture fills them in by the same rules the Rust session
+    /// tests pin.
+    TranslationQuery query(
+      List<(String, Map<String, String?>)> blocks, {
+      String? defaultServiceId = 'builtin',
+    }) {
+      final targets = [for (final block in blocks) block.$1];
+
+      TranslationOutputState outputFor(String serviceId, String target) {
+        final texts = blocks.firstWhere((block) => block.$1 == target).$2;
+        final asked = texts.containsKey(serviceId);
+        final value = texts[serviceId];
+        final loading = asked && value == null;
+        final isError = value != null && value.startsWith('ERR:');
+        final text = value != null && !isError ? value : '';
+        final error = isError ? value.substring(4) : null;
+        final failed = asked && !loading && text.isEmpty;
+        return TranslationOutputState(
           target: target,
-          enabled: true,
+          asked: asked,
+          loading: loading,
+          text: text,
+          error: error,
+          translating: asked && loading,
+          failed: failed,
+          missingLanguage: failed &&
+              (error ?? '').contains(SystemLanguageNotInstalled.marker),
+        );
+      }
+
+      final results = [
+        for (final service in services)
+          TranslationServiceResultState(
+            service: service,
+            outputs: [
+              for (final target in targets) outputFor(service.id, target)
+            ],
+          ),
+      ];
+      TranslationOutputState outputOf(
+        TranslationServiceResultState result,
+        String target,
+      ) =>
+          result.outputs.firstWhere((output) => output.target == target);
+      TranslationServiceResultState? blockFor(String target) {
+        if (defaultServiceId != null) {
+          return results
+              .where((result) => result.service.id == defaultServiceId)
+              .firstOrNull;
+        }
+        return results
+                .where((result) => outputOf(result, target).text.isNotEmpty)
+                .firstOrNull ??
+            results
+                .where((result) => outputOf(result, target).asked)
+                .firstOrNull ??
+            results.firstOrNull;
+      }
+
+      TranslationOutputState? blockOutput(String target) {
+        final result = blockFor(target);
+        return result == null ? null : outputOf(result, target);
+      }
+
+      final blockStates = [
+        for (final target in targets)
+          TranslationBlockState(
+            target: target,
+            serviceId: blockFor(target)?.service.id,
+            preferredText: (blockOutput(target)?.text.isNotEmpty ?? false)
+                ? blockOutput(target)!.text
+                : null,
+          ),
+      ];
+      final failedServiceIds = [
+        for (final result in results)
+          if (result.outputs.any((output) => output.failed)) result.service.id,
+      ];
+      final anyText = results.any(
+        (result) => result.outputs.any((output) => output.text.isNotEmpty),
+      );
+      final pending = results
+          .expand((result) => result.outputs)
+          .where((output) => output.translating)
+          .length;
+      final anyMissingFailure = results.any(
+        (result) =>
+            result.outputs
+                .where((output) => output.failed)
+                .firstOrNull
+                ?.missingLanguage ==
+            true,
+      );
+      return TranslationQuery(
+        TranslationQueryState(
+          text: 'Self-attention…',
+          targets: targets,
+          results: results,
+          defaultServiceId: defaultServiceId,
+          leadServiceId: defaultServiceId ?? services.first.id,
+          blocks: blockStates,
+          firstPreferredTarget: blockStates
+              .where((block) => block.preferredText != null)
+              .firstOrNull
+              ?.target,
+          pendingCount: pending,
+          failedServiceIds: failedServiceIds,
+          allFailed: !anyText &&
+              pending == 0 &&
+              failedServiceIds.isNotEmpty &&
+              !anyMissingFailure,
+          allTargetsMissingLanguage: targets.every(
+            (target) => blockOutput(target)?.missingLanguage == true,
+          ),
         ),
-        translationResultRecordList: [
-          for (final entry in texts.entries)
-            TranslationResultRecord(translationServiceId: entry.key)
-              ..translateResponse =
-                  entry.value == null || entry.value!.startsWith('ERR:')
-                      ? null
-                      : TranslateResponse(
-                          translations: [TextTranslation(text: entry.value!)],
-                        )
-              ..translateError =
-                  entry.value != null && entry.value!.startsWith('ERR:')
-                      ? TranslationError(message: entry.value!.substring(4))
-                      : null,
-        ],
-        unsupportedServiceIdList: const [],
       );
     }
 
@@ -195,7 +301,7 @@ void main() {
     final copied = <String>[];
 
     Widget view({
-      required List<TranslationResult> results,
+      required List<(String, Map<String, String?>)> blocks,
       Set<String> open = const {},
       String? copiedTarget,
       String? preferredServiceId = 'builtin',
@@ -203,15 +309,7 @@ void main() {
       return specimen(
         width: 396,
         MiniTranslatorTranslation(
-          querySubmitted: true,
-          translationResultList: results,
-          translationServiceIds: const {'builtin', 'claude'},
-          serviceNameById: const {'builtin': '内置模型', 'claude': 'Claude'},
-          providerTypeByServiceId: const {
-            'builtin': ProviderType.system,
-            'claude': ProviderType.anthropic,
-          },
-          preferredServiceId: preferredServiceId,
+          query: query(blocks, defaultServiceId: preferredServiceId),
           inputSubmitMode: InputSubmitMode.enter,
           compareOpenTargets: open,
           copiedTarget: copiedTarget,
@@ -232,9 +330,9 @@ void main() {
     ) async {
       await tester.pumpWidget(
         view(
-          results: [
-            result('zh-Hans', {'builtin': '自注意力…', 'claude': '自注意力机制…'}),
-            result('ja', {'builtin': '自己注意機構は…', 'claude': '自己注意は…'}),
+          blocks: [
+            ('zh-Hans', {'builtin': '自注意力…', 'claude': '自注意力机制…'}),
+            ('ja', {'builtin': '自己注意機構は…', 'claude': '自己注意は…'}),
           ],
         ),
       );
@@ -275,9 +373,9 @@ void main() {
     ) async {
       await tester.pumpWidget(
         view(
-          results: [
-            result('zh-Hans', {'builtin': '自注意力…', 'claude': '自注意力机制…'}),
-            result('ja', {'builtin': '自己注意機構は…', 'claude': '自己注意は…'}),
+          blocks: [
+            ('zh-Hans', {'builtin': '自注意力…', 'claude': '自注意力机制…'}),
+            ('ja', {'builtin': '自己注意機構は…', 'claude': '自己注意は…'}),
           ],
           open: const {'ja'},
         ),
@@ -299,8 +397,8 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        view(results: [
-          result('zh-Hans', {'builtin': '自注意力…'})
+        view(blocks: [
+          ('zh-Hans', {'builtin': '自注意力…'})
         ]),
       );
       expect(tester.takeException(), isNull);
@@ -317,10 +415,10 @@ void main() {
         'the preferred service lacking the language files takes the slot', (
       tester,
     ) async {
-      final results = [
-        result('zh-Hans', {'builtin': notInstalled, 'claude': '自注意力机制…'}),
+      final blocks = [
+        ('zh-Hans', {'builtin': notInstalled, 'claude': '自注意力机制…'}),
       ];
-      await tester.pumpWidget(view(results: results, open: const {'zh-Hans'}));
+      await tester.pumpWidget(view(blocks: blocks, open: const {'zh-Hans'}));
       expect(tester.takeException(), isNull);
 
       // The danger key, with the pair named and the fix as a link. The
@@ -339,13 +437,11 @@ void main() {
       expect(find.text('自注意力机制…'), findsOneWidget);
       // And the footer hears it is a failed query.
       expect(
-        allTargetsMissingLanguage(
-            results, 'builtin', const {'builtin', 'claude'}),
+        query(blocks, defaultServiceId: 'builtin').allTargetsMissingLanguage,
         isTrue,
       );
       expect(
-        allTargetsMissingLanguage(
-            results, 'claude', const {'builtin', 'claude'}),
+        query(blocks, defaultServiceId: 'claude').allTargetsMissingLanguage,
         isFalse,
       );
     });
@@ -357,8 +453,8 @@ void main() {
     ) async {
       await tester.pumpWidget(
         view(
-          results: [
-            result('zh-Hans', {'builtin': notInstalled, 'claude': '自注意力机制…'}),
+          blocks: [
+            ('zh-Hans', {'builtin': notInstalled, 'claude': '自注意力机制…'}),
           ],
           preferredServiceId: null,
           open: const {'zh-Hans'},
@@ -377,8 +473,8 @@ void main() {
     ) async {
       await tester.pumpWidget(
         view(
-          results: [
-            result('zh-Hans', {'builtin': notInstalled})
+          blocks: [
+            ('zh-Hans', {'builtin': notInstalled})
           ],
           preferredServiceId: null,
         ),
@@ -393,9 +489,9 @@ void main() {
     ) async {
       await tester.pumpWidget(
         view(
-          results: [
-            result('zh-Hans', {'builtin': '自注意力…'}),
-            result('ja', {'builtin': null}),
+          blocks: [
+            ('zh-Hans', {'builtin': '自注意力…'}),
+            ('ja', {'builtin': null}),
           ],
         ),
       );

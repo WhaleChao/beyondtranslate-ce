@@ -43,6 +43,14 @@ export 'package:beyondtranslate_runtime/beyondtranslate_runtime.dart'
         TextTranslation,
         TranslateRequest,
         TranslateResponse,
+        // Translation session (the backend both windows run on)
+        TranslationBlockState,
+        TranslationOutputState,
+        TranslationQueryState,
+        TranslationServiceResultState,
+        RuntimeTranslationSession,
+        TranslationSessionListener,
+        TranslationSessionState,
         WordDefinition,
         WordEtymology,
         WordImage,
@@ -112,17 +120,4 @@ void stopApiServer() {
   _apiServer?.stop();
   _apiServer = null;
   _apiServerInfo = null;
-}
-
-/// A simple error class used to record translation / dictionary lookup
-/// failures in [TranslationResultRecord].
-class TranslationError {
-  final String message;
-
-  const TranslationError({required this.message});
-
-  factory TranslationError.fromJson(Map<String, dynamic> json) =>
-      TranslationError(message: json['message'] ?? '');
-
-  Map<String, dynamic> toJson() => {'message': message};
 }

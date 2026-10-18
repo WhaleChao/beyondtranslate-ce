@@ -257,7 +257,15 @@ bool isDefaultTranslationService(
   ServiceConfigEntry service,
   GeneralSettings general,
 ) {
-  final current = general.defaultTranslationService;
+  return isDefaultTranslationServiceId(
+    service,
+    general.defaultTranslationService,
+  );
+}
+
+/// [isDefaultTranslationService] against the stored id itself: the service's
+/// own, or its provider's for a service the runtime synthesised.
+bool isDefaultTranslationServiceId(ServiceConfigEntry service, String current) {
   return current == service.id ||
       (isImplicitService(service) && current == service.providerId);
 }

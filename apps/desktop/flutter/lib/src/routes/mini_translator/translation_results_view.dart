@@ -1,13 +1,12 @@
 import 'package:beyondtranslate_runtime/beyondtranslate_runtime.dart'
-    show InputSubmitMode, ProviderType;
+    show InputSubmitMode, LookUpResponse;
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../features.dart';
 import '../../i18n/i18n.dart';
-import '../../models/translation_result.dart';
-import '../../models/translation_result_record.dart';
 import '../../services/system_translation.dart';
+import '../../services/translation_controller.dart';
 import '../../theme/product_tokens.dart'
     show ProductPalette, ProductTokens, ProductTokensContext, ProductTypography;
 import '../../utils/language_util.dart';
@@ -30,148 +29,7 @@ import '../../widgets/ui.dart'
         Spinner,
         ThemeDataBuildContextProps,
         WidgetSize;
-
-/// One service's translated text, paired with the target it belongs to.
-typedef ServiceTranslation = ({
-  TranslationResult result,
-  TranslationResultRecord record,
-  String text,
-});
-
-/// Every service translation with text, in service order — the first target's
-/// records first, then any additional configured targets.
-List<ServiceTranslation> serviceTranslations(List<TranslationResult> results) {
-  final translations = <ServiceTranslation>[];
-  for (final result in results) {
-    for (final record in result.translationResultRecordList ??
-        const <TranslationResultRecord>[]) {
-      final texts = record.translateResponse?.translations ?? [];
-      if (texts.isEmpty || texts.first.text.isEmpty) continue;
-      translations.add((
-        result: result,
-        record: record,
-        text: texts.first.text,
-      ));
-    }
-  }
-  return translations;
-}
-
-/// The translation the preferred block shows: the default service's, and only
-/// its own. A default that failed is a failed translation — the block says so
-/// rather than quietly promoting whichever other service answered, which would
-/// leave 设置 · 服务 naming one service and the window showing another.
-///
-/// With no default among the enabled services there is nothing to be faithful
-/// to, and the first service that answered stands in.
-ServiceTranslation? preferredTranslation(
-  List<TranslationResult> results,
-  String? preferredServiceId,
-) {
-  final translations = serviceTranslations(results);
-  if (translations.isEmpty) return null;
-  if (preferredServiceId == null) return translations.first;
-  for (final translation in translations) {
-    if (translation.record.translationServiceId == preferredServiceId) {
-      return translation;
-    }
-  }
-  return null;
-}
-
-bool _recordHasText(TranslationResultRecord record) {
-  final texts = record.translateResponse?.translations ?? [];
-  return texts.isNotEmpty && texts.first.text.isNotEmpty;
-}
-
-/// The record a target's block speaks for: the default service's, whatever
-/// state it is in — its text, its failure, or its spinner. The other services
-/// only ever appear in the compare list, so nothing they do can take this
-/// slot.
-///
-/// With no default among the enabled services the block follows the first
-/// service that answered, and before any of them has, the first that was
-/// asked.
-TranslationResultRecord? blockRecord(
-  TranslationResult result,
-  String? preferredServiceId,
-  Set<String> translationServiceIds,
-) {
-  final records =
-      (result.translationResultRecordList ?? const <TranslationResultRecord>[])
-          .where((record) =>
-              translationServiceIds.contains(record.translateServiceIdOrEmpty));
-  if (preferredServiceId != null) {
-    return records
-        .where((record) => record.translationServiceId == preferredServiceId)
-        .firstOrNull;
-  }
-  return records.where(_recordHasText).firstOrNull ?? records.firstOrNull;
-}
-
-/// The record whose missing language files take [result]'s slot — 系统翻译
-/// reporting `languagePairNotInstalled` for this target.
-///
-/// Only the block's own service can take that slot: what another service made
-/// of this target says nothing about whether the one you configured could
-/// answer.
-TranslationResultRecord? missingLanguageRecord(
-  TranslationResult result,
-  String? preferredServiceId,
-  Set<String> translationServiceIds,
-) {
-  final own = blockRecord(result, preferredServiceId, translationServiceIds);
-  if (own == null || _recordHasText(own)) return null;
-  return SystemLanguageNotInstalled.of(own.translateError?.message) != null
-      ? own
-      : null;
-}
-
-/// 语言文件未下载 on every target is a failed query like 未返回结果: nothing to
-/// read, copy or star, and ⏎ is a retry. The window shell asks so its footer
-/// can grey 复制/收藏 and relabel ⏎.
-bool allTargetsMissingLanguage(
-  List<TranslationResult> results,
-  String? preferredServiceId,
-  Set<String> translationServiceIds,
-) {
-  return results.isNotEmpty &&
-      results.every(
-        (result) =>
-            missingLanguageRecord(
-              result,
-              preferredServiceId,
-              translationServiceIds,
-            ) !=
-            null,
-      );
-}
-
-/// True when every configured service came back with an error and none is
-/// still in flight — the 服务全部失效 state. The window shell asks so its ⏎
-/// button can read 重试.
-bool allServicesFailed(
-  List<TranslationResult> results,
-  Set<String> translationServiceIds,
-) {
-  var pending = 0;
-  var failed = 0;
-  for (final result in results) {
-    for (final record in result.translationResultRecordList ??
-        const <TranslationResultRecord>[]) {
-      if (!translationServiceIds.contains(record.translationServiceId)) {
-        continue;
-      }
-      if (record.translateError != null) {
-        failed++;
-      } else {
-        final texts = record.translateResponse?.translations ?? [];
-        if (texts.isEmpty || texts.first.text.isEmpty) pending++;
-      }
-    }
-  }
-  return failed > 0 && pending == 0 && serviceTranslations(results).isEmpty;
-}
+import '../settings/provider_meta.dart' show serviceDisplayName;
 
 /// The preferred block plus the on-demand service comparison, mirroring the
 /// deck's MiniTranslator: one preferred translation as the visual protagonist,
@@ -185,14 +43,8 @@ bool allServicesFailed(
 class MiniTranslatorTranslation extends StatelessWidget {
   const MiniTranslatorTranslation({
     super.key,
-    required this.querySubmitted,
-    required this.translationResultList,
-    required this.translationServiceIds,
-    required this.serviceNameById,
-    required this.providerTypeByServiceId,
-    this.defaultServiceId,
+    required this.query,
     this.matchedAutomatically = true,
-    required this.preferredServiceId,
     required this.inputSubmitMode,
     required this.compareOpenTargets,
     required this.copiedTarget,
@@ -201,26 +53,13 @@ class MiniTranslatorTranslation extends StatelessWidget {
     required this.onRequery,
   });
 
-  final bool querySubmitted;
-  final List<TranslationResult> translationResultList;
-
-  /// Service ids of type translation — lookup-only records must not keep the
-  /// block in the translating phase.
-  final Set<String> translationServiceIds;
-  final Map<String, String> serviceNameById;
-
-  /// The provider each service runs on, so a compare row carries the same
-  /// mark 服务 shows it under rather than a lettered disc.
-  final Map<String, ProviderType> providerTypeByServiceId;
-
-  /// The translation service 设置 marks 默认. Its output is attributed as plain
-  /// 译文; only a promoted service is named, so you know what you switched to.
-  final String? defaultServiceId;
+  /// The submitted query, or null before the first — the backend both windows
+  /// share decides what each target's block shows; this only draws it.
+  final TranslationQuery? query;
 
   /// Whether the capsule is on 自动匹配. Only then does the heading name the
   /// target: a language the user picked is already in the capsule.
   final bool matchedAutomatically;
-  final String? preferredServiceId;
 
   /// Only so 原文已修改 names the key that actually re-runs the query —
   /// 提交方式 decides which one that is.
@@ -241,81 +80,48 @@ class MiniTranslatorTranslation extends StatelessWidget {
   /// What the 失效清单 toggle is keyed under in [compareOpenTargets].
   static const String kFailureListKey = '';
 
-  String _serviceName(String? serviceId) =>
-      serviceNameById[serviceId] ?? serviceId ?? '';
-
   /// The heading over a translation block. The default service is never
   /// named — the language alone is enough when the answer came from the one
   /// you would expect; a promoted service trails as a qualifier.
-  BlockHeadingParts _heading(String? serviceId, String target) {
+  BlockHeadingParts _heading(
+    TranslationQuery query,
+    TranslationServiceResult? result,
+    String target,
+  ) {
     return translationHeading(
       target: target,
-      serviceName: serviceId != null && serviceId == defaultServiceId
+      serviceName: result == null || result.service.id == query.defaultServiceId
           ? null
-          : _serviceName(serviceId),
+          : serviceDisplayName(result.service),
       matched: matchedAutomatically,
     );
   }
 
-  _ServiceFailure _failureOf(TranslationResultRecord record) {
-    final message = record.translateError?.message.trim() ?? '';
+  _ServiceFailure _failureOf(TranslationFailure failure) {
+    final reason = failure.output.reason;
     return _ServiceFailure(
-      name: _serviceName(record.translationServiceId),
-      reason:
-          message.isEmpty ? t.mini_translator.result.unknown_error : message,
-      notInstalled: SystemLanguageNotInstalled.of(message),
+      name: serviceDisplayName(failure.result.service),
+      reason: reason.isEmpty ? t.mini_translator.result.unknown_error : reason,
+      notInstalled: failure.output.missingLanguage,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final vars = context.vars;
-    final results = translationResultList;
+    final query = this.query;
 
-    if (!querySubmitted || results.isEmpty) {
+    if (query == null || query.targets.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final translations = serviceTranslations(results);
-
-    // Translation records that errored / are still in flight, ignoring
-    // dictionary lookups. The failures are kept, not just counted: 服务全部失效
-    // prints one card per service with the reason it gave.
-    var pendingCount = 0;
-    final failures = <_ServiceFailure>[];
-    final seenFailed = <String>{};
-    for (final result in results) {
-      for (final record in result.translationResultRecordList ??
-          const <TranslationResultRecord>[]) {
-        if (!translationServiceIds.contains(record.translateServiceIdOrEmpty)) {
-          continue;
-        }
-        if (record.translateError != null) {
-          // A service that failed for every target is one failure, not one
-          // per target: the card names the service, not the language.
-          if (!seenFailed.add(record.translateServiceIdOrEmpty)) continue;
-          failures.add(_failureOf(record));
-        } else {
-          final texts = record.translateResponse?.translations ?? [];
-          if (texts.isEmpty || texts.first.text.isEmpty) {
-            pendingCount++;
-          }
-        }
-      }
-    }
-
-    // 服务全部失效 — unless one of the failures is 系统翻译 lacking the
-    // language files, which the target's own block reports, with the fix.
-    final noResult = translations.isEmpty &&
-        pendingCount == 0 &&
-        failures.isNotEmpty &&
-        !failures.any((failure) => failure.notInstalled != null);
-
-    if (noResult) {
+    // 服务全部失效 — the failures are kept, not just counted: the list prints
+    // one card per service with the reason it gave.
+    if (query.allFailed) {
+      final failures = query.failures.map(_failureOf).toList(growable: false);
       final open = compareOpenTargets.contains(kFailureListKey);
-      final targetList = results
-          .map((result) =>
-              getLanguageName(result.translationTarget?.target ?? ''))
+      final targetList = query.targets
+          .map(getLanguageName)
           .join(t.workbench.translation.target_separator);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -368,7 +174,11 @@ class MiniTranslatorTranslation extends StatelessWidget {
                         // already says the translation did not arrive, and a
                         // status on the label would say it twice.
                         child: BlockHeading(
-                          _heading(preferredServiceId, targetList),
+                          _heading(
+                            query,
+                            query.blockResult(query.targets.first),
+                            targetList,
+                          ),
                         ),
                       ),
                     ),
@@ -420,17 +230,19 @@ class MiniTranslatorTranslation extends StatelessWidget {
       );
     }
 
-    final stacked = results.length > 1;
+    final targets = query.targets;
+    final stacked = targets.length > 1;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < results.length; i++)
+        for (var i = 0; i < targets.length; i++)
           _buildTargetBlock(
             context,
-            results[i],
+            query,
+            targets[i],
             first: i == 0,
-            last: i == results.length - 1,
+            last: i == targets.length - 1,
             stacked: stacked,
           ),
       ],
@@ -442,57 +254,43 @@ class MiniTranslatorTranslation extends StatelessWidget {
   /// services' renderings into this language.
   Widget _buildTargetBlock(
     BuildContext context,
-    TranslationResult result, {
+    TranslationQuery query,
+    String targetCode, {
     required bool first,
     required bool last,
     required bool stacked,
   }) {
     final vars = context.vars;
-    final targetCode = result.translationTarget?.target ?? '';
     // The resolved target rides on the attribution label, as in the main
     // window's 首选译文 block; the capsule stays on 自动检测 ⇄ 自动匹配.
     final targetName = getLanguageName(targetCode);
     // The block belongs to one service — the default — and shows whatever
     // that service did with this target.
-    final own = blockRecord(result, preferredServiceId, translationServiceIds);
+    final own = query.blockResult(targetCode);
+    final ownOutput = own?.output(targetCode);
     // 系统翻译 without this pair's language files: reason + fix, no text.
-    final missingRecord = missingLanguageRecord(
-      result,
-      preferredServiceId,
-      translationServiceIds,
-    );
-    final missing = missingRecord == null
-        ? null
-        : SystemLanguageNotInstalled.of(missingRecord.translateError?.message);
-    final preferred = missing != null
-        ? null
-        : preferredTranslation([result], preferredServiceId);
+    final missing = ownOutput?.missingLanguage;
+    final preferredText =
+        missing != null ? null : query.preferredText(targetCode);
     // The default came back with a reason instead of a translation. It takes
     // the block the way the missing-language notice does: another service
     // answering is not this service answering.
-    final failureRecord = missing == null &&
-            preferred == null &&
-            own != null &&
-            own.translateError != null
-        ? own
+    final failure = missing == null &&
+            preferredText == null &&
+            ownOutput != null &&
+            ownOutput.failed
+        ? ownOutput
         : null;
-    final failed = missing != null || failureRecord != null;
-    final translating = !failed && preferred == null;
+    final failed = missing != null || failure != null;
+    final translating = !failed && preferredText == null;
     final open = compareOpenTargets.contains(targetCode);
     final copied = copiedTarget == targetCode;
     // The list is keyed by service, not by what came back: opening it is what
-    // asks the other services, so one with no record yet is a row too — it
-    // just holds a spinner until it answers.
-    final ownServiceId = own?.translateServiceIdOrEmpty;
-    final recordByService = {
-      for (final record in result.translationResultRecordList ??
-          const <TranslationResultRecord>[])
-        record.translateServiceIdOrEmpty: record,
-    };
+    // asks the other services, so one not yet asked is a row too — it just
+    // holds a spinner until it answers.
     final rows = [
-      for (final serviceId in translationServiceIds)
-        if (serviceId != ownServiceId)
-          _buildCompareRow(context, serviceId, recordByService[serviceId]),
+      for (final result in query.others(targetCode))
+        _buildCompareRow(context, result, result.output(targetCode)),
     ];
     // 对比 counts the services being compared, this block's own included —
     // it is the size of the comparison, not of the list that folds out.
@@ -589,17 +387,19 @@ class MiniTranslatorTranslation extends StatelessWidget {
                       color: vars.colorContentSubtle,
                     ),
                   )
-                else if (failureRecord != null)
+                else if (failure != null)
                   // The reason sits where the translation would have been, at
                   // the same type scale: the block reports what the service
                   // you configured said, and 对比 is there to ask the others.
                   Text(
-                    _failureOf(failureRecord).reason,
+                    failure.reason.isEmpty
+                        ? t.mini_translator.result.unknown_error
+                        : failure.reason,
                     style: vars.miniTranslationStyle(color: vars.dangerFg),
                   )
                 else
                   TranslationText(
-                    preferred!.text,
+                    preferredText!,
                     style: vars.miniTranslationStyle(
                       color: vars.colorContent,
                     ),
@@ -649,14 +449,7 @@ class MiniTranslatorTranslation extends StatelessWidget {
                     ),
                     // 语言文件未下载 is already said by the body in the
                     // translation's slot; the heading does not repeat it.
-                    child: BlockHeading(
-                      _heading(
-                        (missingRecord ?? failureRecord)
-                                ?.translationServiceId ??
-                            preferred?.record.translationServiceId,
-                        targetName,
-                      ),
-                    ),
+                    child: BlockHeading(_heading(query, own, targetName)),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -717,8 +510,8 @@ class MiniTranslatorTranslation extends StatelessWidget {
   /// back, or the reason it did not.
   Widget _buildCompareRow(
     BuildContext context,
-    String serviceId,
-    TranslationResultRecord? record,
+    TranslationServiceResult result,
+    TranslationOutput output,
   ) {
     final vars = context.vars;
     final bodyStyle = vars.cjkStyle(
@@ -726,13 +519,12 @@ class MiniTranslatorTranslation extends StatelessWidget {
       height: 1.7,
       color: vars.colorContentSecondary,
     );
-    final texts = record?.translateResponse?.translations ?? [];
-    final text = texts.isEmpty ? '' : texts.first.text;
-    final failure = record?.translateError == null ? null : _failureOf(record!);
+    final failure =
+        output.failed ? _failureOf((result: result, output: output)) : null;
 
     final Widget child;
-    if (text.isNotEmpty) {
-      child = TranslationText(text, style: bodyStyle);
+    if (output.hasText) {
+      child = TranslationText(output.text, style: bodyStyle);
     } else if (failure != null) {
       // The install notice or the reason the service gave, where its
       // translation would have been.
@@ -753,15 +545,11 @@ class MiniTranslatorTranslation extends StatelessWidget {
     }
 
     return CandidateRow(
-      name: _serviceName(serviceId),
-      providerType: providerTypeByServiceId[serviceId],
+      name: serviceDisplayName(result.service),
+      providerType: result.provider?.type,
       child: child,
     );
   }
-}
-
-extension on TranslationResultRecord {
-  String get translateServiceIdOrEmpty => translationServiceId ?? '';
 }
 
 /// Why one service came back empty — a blanket "failed" gives the user nothing
@@ -833,45 +621,28 @@ class _FailureCard extends StatelessWidget {
 }
 
 class MiniTranslatorWordDefinition extends StatelessWidget {
-  const MiniTranslatorWordDefinition({
-    super.key,
-    required this.translationResultList,
-  });
+  const MiniTranslatorWordDefinition({super.key, required this.lookUp});
 
-  final List<TranslationResult> translationResultList;
+  /// 词典 — the query's dictionary answer, if a dictionary service ran.
+  final LookUpResponse? lookUp;
 
   @override
   Widget build(BuildContext context) {
-    final results = translationResultList;
-
-    if (results.isEmpty || !kDictionaryFeatureEnabled) {
+    final lookup = lookUp;
+    if (lookup == null || !kDictionaryFeatureEnabled) {
       return const SizedBox.shrink();
     }
 
-    // Look for a lookup result with definitions
-    String? word;
-    String? phonetic;
-    String? definition;
-
-    for (final result in results) {
-      final records = result.translationResultRecordList ?? [];
-      for (final record in records) {
-        if (record.lookUpResponse != null) {
-          final lookup = record.lookUpResponse!;
-          word ??= lookup.word;
-          if (lookup.pronunciations != null &&
-              lookup.pronunciations!.isNotEmpty) {
-            phonetic ??= lookup.pronunciations!.first.phoneticSymbol;
-          }
-          if (lookup.definitions != null && lookup.definitions!.isNotEmpty) {
-            final firstDef = lookup.definitions!.first;
-            if (firstDef.values != null && firstDef.values!.isNotEmpty) {
-              definition ??= firstDef.values!.first;
-            }
-          }
-        }
-      }
-    }
+    final word = lookup.word;
+    final pronunciations = lookup.pronunciations;
+    final phonetic = pronunciations == null || pronunciations.isEmpty
+        ? null
+        : pronunciations.first.phoneticSymbol;
+    final definitions = lookup.definitions;
+    final values = definitions == null || definitions.isEmpty
+        ? null
+        : definitions.first.values;
+    final definition = values == null || values.isEmpty ? null : values.first;
 
     if (word == null && definition == null) return const SizedBox.shrink();
 

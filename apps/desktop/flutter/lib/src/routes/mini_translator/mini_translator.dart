@@ -9,12 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nativeapi_flutter/nativeapi_flutter.dart' as nativeapi;
 
 import '../../extensions/window_controller.dart';
-import '../../features.dart';
 import '../../i18n/i18n.dart';
-import '../../models/translation_result.dart';
-import '../../models/translation_result_record.dart';
-import '../../routes/settings/provider_meta.dart'
-    show isDefaultTranslationService, isServiceEnabled, serviceDisplayName;
 import '../../routes/settings/services.dart' show ServicesSettingsPage;
 import '../../services/app_windows.dart'
     show
@@ -24,11 +19,10 @@ import '../../services/app_windows.dart'
         miniTranslatorWindowController,
         showMiniTranslatorWindow,
         showSettingsWindow;
-import '../../services/history_store.dart';
-import '../../services/llm_stream.dart';
 import '../../services/runtime.dart';
 import '../../services/settings_store.dart';
 import '../../services/shortcut_service/shortcut_service.dart';
+import '../../services/translation_controller.dart';
 import '../../utils/language_util.dart';
 import '../../utils/platform_util.dart';
 import '../../widgets/block_heading.dart';
@@ -82,16 +76,13 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   bool _isAllowedScreenCaptureAccess = true;
   bool _isAllowedScreenSelectionAccess = true;
 
-  String _sourceLanguage = kAutoSource;
-  String? _selectedTargetLanguage;
-  int _activeConfigIndex = -1;
-  List<TranslationTarget> _fastTargets = [];
+  /// The translation backend, shared with the main window: the language
+  /// pair, the query, 对比, the dictionary and the history entry all live
+  /// there, so the two windows cannot drift apart on what a query means.
+  final TranslationController _controller = TranslationController();
 
-  bool _querySubmitted = false;
-  String _text = '';
-  String? _detectedLanguage;
-  bool _isTextDetecting = false; // ignore: unused_field
-  List<TranslationResult> _translationResultList = [];
+  String get _text => _controller.text;
+  bool get _querySubmitted => _controller.query != null;
 
   /// 对比 — per target: the candidates are the other services' renderings
   /// into that language, so each target's block folds out its own list.
@@ -103,28 +94,7 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   /// Which target's 复制 just fired — a block's, or [_kCopiedAll] for the
   /// footer's.
   String? _copiedTarget;
-  bool _starred = false;
-  final TranslationHistorySession _historySession = TranslationHistorySession();
   Timer? _copiedTimer;
-
-  /// Service display names and the translation-service ids, captured per query
-  /// so the results view can attribute records without re-fetching settings.
-  Map<String, String> _serviceNameById = {};
-
-  /// The provider type behind each queried service, captured with the names so
-  /// a compare row can carry the provider's own mark.
-  Map<String, ProviderType> _providerTypeByServiceId = {};
-  Set<String> _translationServiceIds = {};
-
-  /// The translation service 设置 marks 默认, captured per query: it is the
-  /// one the query runs, and its output fills the block.
-  String? _defaultServiceId;
-
-  /// The services this query was built from, kept so 对比 can ask the ones the
-  /// query skipped without re-reading settings.
-  List<ServiceConfigEntry> _queryServices = const [];
-  Map<String, ServiceConfigEntry> _serviceById = const {};
-  Map<String, ProviderConfigEntry> _providersById = const {};
 
   Timer? _resizeSettledTimer;
   bool _isWindowResizeScheduled = false;
@@ -139,13 +109,14 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   @override
   void initState() {
     settingsStore.addListener(_handleChanged);
+    _controller.addListener(_handleChanged);
+    _controller.initialize();
     WidgetsBinding.instance.addObserver(this);
     if (kIsLinux || kIsMacOS || kIsWindows) {
       ShortcutService.instance.setListener(this);
       _registerWindowEvents();
       _init();
     }
-    _loadData();
     super.initState();
     _scheduleWindowResize(animate: false, settle: true);
   }
@@ -153,6 +124,9 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   @override
   void dispose() {
     settingsStore.removeListener(_handleChanged);
+    _controller
+      ..removeListener(_handleChanged)
+      ..dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (kIsLinux || kIsMacOS || kIsWindows) {
       ShortcutService.instance.setListener(null);
@@ -416,19 +390,8 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
     });
   }
 
-  void _loadData() async {
-    // The previous implementation populated `_latestVersion` from a cloud API
-    // and refreshed local service config. Both pieces of state moved into the
-    // Rust runtime / external installers, so the mini translator no longer
-    // performs network bootstrapping here.
-  }
-
   Future<void> _queryData() async {
-    if (_historySession.beginSource(_text)) _starred = false;
     setState(() {
-      _querySubmitted = true;
-      _detectedLanguage = null;
-      _translationResultList = [];
       _resultStale = false;
       _copiedTarget = null;
       // A new query asks the default service and nothing else, so the lists
@@ -436,411 +399,21 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
       // this query never ran.
       _compareOpen.clear();
     });
-
-    final settings = runtime.settings();
-    final providers = await settings.listProviders();
-    final services = await settings.listServices();
-    final generalSettings = await settings.getGeneral();
-    _providersById = {
-      for (final provider in providers) provider.id: provider,
-    };
-    final queryServices = services
-        .where(
-          (service) =>
-              (service.type == ServiceType.dictionary ||
-                  service.type == ServiceType.translation) &&
-              isServiceTypeVisible(service.type) &&
-              // A service switched off on 服务 takes no part in a query.
-              isServiceEnabled(service),
-        )
-        .toList();
-    _queryServices = queryServices;
-    _serviceById = {for (final service in queryServices) service.id: service};
-    _serviceNameById = {
-      for (final service in queryServices)
-        service.id: serviceDisplayName(service),
-    };
-    _providerTypeByServiceId = {
-      for (final service in queryServices)
-        if (_providersById[service.providerId] case final provider?)
-          service.id: provider.type,
-    };
-    _translationServiceIds = {
-      for (final service in queryServices)
-        if (service.type == ServiceType.translation) service.id,
-    };
-    _defaultServiceId = queryServices
-        .where(
-          (service) =>
-              service.type == ServiceType.translation &&
-              isDefaultTranslationService(service, generalSettings),
-        )
-        .firstOrNull
-        ?.id;
-
-    // Detect source language for translation target matching.
-    if (_text.isNotEmpty) {
-      try {
-        final translationService = queryServices.firstWhere(
-          (service) => service.type == ServiceType.translation,
-        );
-        final detectResponse = await runtime
-            .translation(providerId: translationService.id)
-            .detectLanguage(request: DetectLanguageRequest(texts: [_text]));
-        final detections = detectResponse.detections;
-        if (detections != null && detections.isNotEmpty) {
-          _detectedLanguage = detections.first.detectedLanguage;
-          if (mounted) {
-            _setStateAndScheduleWindowResize(() {});
-          }
-        }
-      } catch (e) {
-        // Detection failed silently; continue without detected language
-        debugPrint('Language detection failed: $e');
-      }
-    }
-
-    // Only the default translation service runs on submit — the rest are asked
-    // when 对比 opens, so a query costs one translation per target however many
-    // services are configured. Dictionary lookups always run: 词典 is its own
-    // block, not a folded candidate. A service with no record is a service
-    // that was not asked, which is what keeps the folded ones out of the
-    // block's own state.
-    final leadServiceId = _defaultServiceId ??
-        queryServices
-            .where((service) => service.type == ServiceType.translation)
-            .firstOrNull
-            ?.id;
-    final activeTargets = await _activeTranslationTargets(generalSettings);
-    final nextTranslationResultList = _createPendingTranslationResults(
-      activeTargets,
-      queryServices
-          .where((service) =>
-              service.type != ServiceType.translation ||
-              service.id == leadServiceId)
-          .toList(growable: false),
-    );
-
-    _setStateAndScheduleWindowResize(() {
-      _translationResultList = nextTranslationResultList;
-    }, animate: false);
-
-    final futures = <Future<bool>>[];
-    for (final result in _translationResultList) {
-      for (final record in result.translationResultRecordList ??
-          const <TranslationResultRecord>[]) {
-        final service = _serviceById[record.translationServiceId];
-        if (service == null) continue;
-        futures.add(
-          _queryProvider(
-            service: service,
-            translationTarget: result.translationTarget,
-            translationResultRecord: record,
-          ),
-        );
-      }
-    }
-
-    await Future.wait(futures);
-    await _saveMiniHistory();
-  }
-
-  /// The services behind 对比, asked the moment the list opens rather than on
-  /// submit. Each is asked once: a second 对比 on the same target finds every
-  /// service already holding a record and does nothing.
-  Future<void> _queryComparisonServices(TranslationResult result) async {
-    final records = result.translationResultRecordList;
-    if (records == null) return;
-    final asked = {
-      for (final record in records) record.translationServiceId,
-    };
-    final pending = _queryServices
-        .where((service) =>
-            service.type == ServiceType.translation &&
-            !asked.contains(service.id))
-        .toList(growable: false);
-    if (pending.isEmpty) return;
-
-    final added = [
-      for (final service in pending)
-        TranslationResultRecord(translationServiceId: service.id),
-    ];
-    // The rows are spinners from here until the answers land.
-    _setStateAndScheduleWindowResize(() => records.addAll(added));
-
-    await Future.wait([
-      for (int i = 0; i < pending.length; i++)
-        _queryProvider(
-          service: pending[i],
-          translationTarget: result.translationTarget,
-          translationResultRecord: added[i],
-        ),
-    ]);
-  }
-
-  Future<void> _saveMiniHistory() async {
-    final preferred = preferredTranslation(
-      _translationResultList,
-      _defaultServiceId,
-    );
-    if (preferred == null || _text.trim().isEmpty) return;
-    final serviceId = preferred.record.translationServiceId ?? '';
-    final target = preferred.result.translationTarget;
-    final entry = await _historySession.save(
-      HistoryEntryInput(
-        source: _text,
-        translation: preferred.text,
-        sourceLanguage: _detectedLanguage ?? target?.source ?? kAutoSource,
-        targetLanguage: target?.target ?? defaultTargetLanguage,
-        serviceId: serviceId,
-        serviceName: (_serviceNameById[serviceId] ?? serviceId).trim(),
-        edited: false,
-      ),
-    );
-    if (!mounted || entry == null) return;
-    _setStateAndScheduleWindowResize(() {
-      _starred = entry.favorite;
-    });
-  }
-
-  Future<void> _toggleHistoryFavorite() async {
-    if (_historySession.entryId == null) await _saveMiniHistory();
-    final entry = await _historySession.toggleFavorite();
-    if (mounted && entry != null) {
-      _setStateAndScheduleWindowResize(() => _starred = entry.favorite);
-    }
-  }
-
-  List<TranslationResult> _createPendingTranslationResults(
-    List<TranslationTarget> activeTargets,
-    List<ServiceConfigEntry> services,
-  ) {
-    return [
-      for (final translationTarget in activeTargets)
-        TranslationResult(
-          translationTarget: translationTarget,
-          translationResultRecordList: [
-            for (final service in services)
-              TranslationResultRecord(translationServiceId: service.id),
-          ],
-          unsupportedServiceIdList: [],
-        ),
-    ];
-  }
-
-  Future<bool> _queryProvider({
-    required ServiceConfigEntry service,
-    required TranslationTarget? translationTarget,
-    required TranslationResultRecord translationResultRecord,
-  }) async {
-    final provider = _providersById[service.providerId];
-    final sourceLanguage = translationTarget?.source;
-    final targetLanguage = translationTarget?.target;
-    final futures = <Future<void>>[];
-
-    if (service.type == ServiceType.dictionary) {
-      futures.add(() async {
-        try {
-          if (sourceLanguage == null || targetLanguage == null) {
-            throw Exception('Translation target language is missing');
-          }
-
-          final lookUpRequest = LookUpRequest(
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage,
-            word: _text,
-          );
-          final lookUpResponse = await runtime
-              .dictionary(providerId: service.id)
-              .lookup(request: lookUpRequest);
-          translationResultRecord.lookUpRequest = lookUpRequest;
-          translationResultRecord.lookUpResponse = lookUpResponse;
-        } catch (error) {
-          translationResultRecord.lookUpError = TranslationError(
-            message: error.toString(),
-          );
-        }
-        if (mounted) _setStateAndScheduleWindowResize(() {});
-      }());
-    }
-
-    if (service.type == ServiceType.translation) {
-      final providerType = provider?.type;
-      final isLlmProvider = providerType == ProviderType.openAi ||
-          providerType == ProviderType.anthropic ||
-          providerType == ProviderType.ollama ||
-          providerType == ProviderType.xAi;
-
-      // Recorded before the call goes out: the request is what tells the
-      // results view this service was asked at all, and the ones 对比 skipped
-      // must not read as still in flight.
-      final translateRequest = TranslateRequest(
-        sourceLanguage: sourceLanguage,
-        targetLanguage: targetLanguage,
-        text: _text,
-      );
-      translationResultRecord.translateRequest = translateRequest;
-
-      if (isLlmProvider) {
-        // Streaming LLM translation — update UI progressively
-        futures.add(() async {
-          try {
-            final buffer = StringBuffer();
-            final stream = LlmStream.translate(
-              providerId: service.id,
-              sourceLang: sourceLanguage ?? 'auto',
-              targetLang: targetLanguage ?? 'en',
-              text: _text,
-            );
-
-            await for (final chunk in stream) {
-              if (chunk.content.isNotEmpty) {
-                buffer.write(chunk.content);
-                // Update the record with accumulated text so far
-                translationResultRecord.translateResponse = TranslateResponse(
-                  translations: [
-                    TextTranslation(
-                      text: buffer.toString(),
-                      detectedSourceLanguage: null,
-                      audioUrl: null,
-                    ),
-                  ],
-                );
-                if (mounted) {
-                  _setStateAndScheduleWindowResize(() {});
-                }
-              }
-            }
-          } catch (error) {
-            translationResultRecord.translateError = TranslationError(
-              message: error.toString(),
-            );
-            if (mounted) _setStateAndScheduleWindowResize(() {});
-          }
-        }());
-      } else {
-        // Traditional non-streaming translation
-        futures.add(() async {
-          try {
-            final translateResponse = await runtime
-                .translation(providerId: service.id)
-                .translate(request: translateRequest);
-            translationResultRecord.translateResponse = translateResponse;
-          } catch (error) {
-            translationResultRecord.translateError = TranslationError(
-              message: error.toString(),
-            );
-          }
-        }());
-      }
-    }
-
-    await Future.wait(futures);
-
-    if (mounted) {
-      _setStateAndScheduleWindowResize(() {});
-    }
-    return true;
-  }
-
-  Future<List<TranslationTarget>> _activeTranslationTargets(
-    GeneralSettings generalSettings,
-  ) async {
-    final persistentTargets = generalSettings.translationTargets;
-
-    if (_activeConfigIndex >= 0 &&
-        _activeConfigIndex < persistentTargets.length) {
-      return [persistentTargets[_activeConfigIndex]];
-    }
-
-    if (_selectedTargetLanguage != null) {
-      return _fastTargets.isNotEmpty
-          ? _fastTargets
-          : [
-              TranslationTarget(
-                source: _sourceLanguage,
-                target: _selectedTargetLanguage!,
-                enabled: true,
-              ),
-            ];
-    }
-
-    if (persistentTargets.isNotEmpty) {
-      final settings = runtime.settings();
-      final active = await settings.getActiveTranslationTargets(
-        targets: persistentTargets,
-        detectedLanguage: _detectedLanguage,
-        // Detection refuses on short input; the runtime falls back to the
-        // script the query is written in so 自动匹配 still routes away from
-        // the language the text is already in.
-        text: _text,
-      );
-      // 每一条目标都被关掉时它会空手而归。退回默认目标，而不是安静地什么都不
-      // 翻 —— 和 `filter_active` 宁可多翻一种也不翻不出东西的取向一致。
-      if (active.isNotEmpty) return active;
-    }
-
-    return [
-      TranslationTarget(
-        source: _sourceLanguage,
-        target: defaultTargetLanguage,
-        enabled: true,
-      ),
-    ];
+    await _controller.submit();
   }
 
   void _handleSourceChanged(String newSource) {
-    _setStateAndScheduleWindowResize(() {
-      _sourceLanguage = newSource;
-      _activeConfigIndex = -1;
-      if (_selectedTargetLanguage != null) {
-        _fastTargets = [
-          TranslationTarget(
-            source: newSource,
-            target: _selectedTargetLanguage!,
-            enabled: true,
-          ),
-        ];
-      }
-    });
+    _controller.setSourceLanguage(newSource);
     if (_text.isNotEmpty) _handleButtonTappedTrans();
   }
 
   void _handleTargetLanguageChanged(String? targetCode) {
-    _setStateAndScheduleWindowResize(() {
-      _selectedTargetLanguage = targetCode;
-      _activeConfigIndex = -1;
-      _fastTargets = targetCode == null
-          ? []
-          : [
-              TranslationTarget(
-                source: _sourceLanguage,
-                target: targetCode,
-                enabled: true,
-              ),
-            ];
-    });
+    _controller.setTargetLanguage(targetCode);
     if (_text.isNotEmpty) _handleButtonTappedTrans();
   }
 
-  void _handleConfigTargetSelected(int index) {
-    if (index == -1) {
-      _setStateAndScheduleWindowResize(() {
-        _activeConfigIndex = -1;
-        _sourceLanguage = kAutoSource;
-        _selectedTargetLanguage = null;
-        _fastTargets = [];
-      });
-      if (_text.isNotEmpty) _handleButtonTappedTrans();
-      return;
-    }
-    final target = settingsStore.general.translationTargets[index];
-    _setStateAndScheduleWindowResize(() {
-      _activeConfigIndex = index;
-      _sourceLanguage = target.source;
-      _selectedTargetLanguage = target.target;
-      _fastTargets = [];
-    });
+  Future<void> _handleConfigTargetSelected(int index) async {
+    await _controller.selectConfiguredTarget(index);
     if (_text.isNotEmpty) _handleButtonTappedTrans();
   }
 
@@ -859,17 +432,14 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   }
 
   void _handleTextChanged(String? newValue, {bool isRequery = false}) {
-    _setStateAndScheduleWindowResize(() {
-      final previousText = _text;
-      _text = (newValue ?? '').trim();
-      if (settingsStore.inputSubmitMode == InputSubmitMode.enter) {
-        _text = _text.replaceAll('\n', ' ');
-      }
-      // 原文已修改 — arm ⏎ 重新翻译 on the result block.
-      if (_querySubmitted && _text != previousText) {
-        _resultStale = true;
-      }
-    });
+    final previousText = _text;
+    var text = (newValue ?? '').trim();
+    if (settingsStore.inputSubmitMode == InputSubmitMode.enter) {
+      text = text.replaceAll('\n', ' ');
+    }
+    // 原文已修改 — arm ⏎ 重新翻译 on the result block.
+    if (_querySubmitted && text != previousText) _resultStale = true;
+    _controller.setText(text);
     if (isRequery) {
       _textEditingController.text = _text;
       _textEditingController.selection = TextSelection(
@@ -896,14 +466,7 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   }
 
   void _handleExtractTextFromScreenCapture() async {
-    _setStateAndScheduleWindowResize(() {
-      _querySubmitted = false;
-      _text = '';
-      _detectedLanguage = null;
-      _isTextDetecting = false;
-      _translationResultList = [];
-    });
-    _textEditingController.clear();
+    _handleButtonTappedClear();
     _focusNode.unfocus();
 
     await _windowHide();
@@ -950,37 +513,26 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
 
   void _handleButtonTappedClear() {
     _setStateAndScheduleWindowResize(() {
-      _querySubmitted = false;
-      _text = '';
-      _detectedLanguage = null;
-      _isTextDetecting = false;
-      _translationResultList = [];
       _resultStale = false;
       _copiedTarget = null;
-      _starred = false;
-      _historySession.reset();
+      _compareOpen.clear();
     });
+    _controller.clear();
     _textEditingController.clear();
     _focusNode.requestFocus();
   }
 
   void _handleButtonTappedCopy() {
-    final preferred = preferredTranslation(
-      _translationResultList,
-      _defaultServiceId,
-    );
-    if (preferred == null) return;
-    _copy(preferred.text, _kCopiedAll);
+    final query = _controller.query;
+    final target = query?.firstPreferredTarget;
+    if (query == null || target == null) return;
+    _copy(query.preferredText(target)!, _kCopiedAll);
   }
 
   /// 复制 on one target's attribution row — that language's preferred text.
   void _handleCopyTarget(String target) {
-    for (final result in _translationResultList) {
-      if (result.translationTarget?.target != target) continue;
-      final preferred = preferredTranslation([result], _defaultServiceId);
-      if (preferred != null) _copy(preferred.text, target);
-      return;
-    }
+    final text = _controller.query?.preferredText(target);
+    if (text != null) _copy(text, target);
   }
 
   void _copy(String text, String key) {
@@ -1006,10 +558,7 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
     if (!opening || target == MiniTranslatorTranslation.kFailureListKey) {
       return;
     }
-    final result = _translationResultList
-        .where((result) => result.translationTarget?.target == target)
-        .firstOrNull;
-    if (result != null) unawaited(_queryComparisonServices(result));
+    unawaited(_controller.compare(target));
   }
 
   void _handleButtonTappedTrans() async {
@@ -1058,21 +607,15 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
   }
 
   Widget _buildBody(BuildContext context) {
-    final hasTranslation =
-        preferredTranslation(_translationResultList, _defaultServiceId) != null;
-    final noResult = _querySubmitted &&
-        allServicesFailed(_translationResultList, _translationServiceIds);
+    final query = _controller.query;
+    final hasTranslation = query?.firstPreferredTarget != null;
+    final noResult = query?.allFailed ?? false;
     // Several targets: 复制 moves onto each block's attribution row, and the
     // footer keeps only the paragraph-level 收藏 and 翻译.
-    final stacked = _translationResultList.length > 1;
+    final stacked = (query?.targets.length ?? 0) > 1;
     // 语言文件未下载 on every target is a failed query like 未返回结果: nothing
     // to copy or star, and ⏎ is a retry.
-    final allMissing = _querySubmitted &&
-        allTargetsMissingLanguage(
-          _translationResultList,
-          _defaultServiceId,
-          _translationServiceIds,
-        );
+    final allMissing = query?.allTargetsMissingLanguage ?? false;
 
     return Column(
       key: _contentViewKey,
@@ -1091,16 +634,18 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
                 focusNode: _focusNode,
                 controller: _textEditingController,
                 inputSubmitMode: settingsStore.inputSubmitMode,
-                targetLanguageName: _selectedTargetLanguage == null
+                targetLanguageName: _controller.targetLanguage == null
                     ? null
-                    : getLanguageName(_selectedTargetLanguage!),
+                    : getLanguageName(_controller.targetLanguage!),
                 sourceHeadingParts: sourceHeading(
                   _text.isEmpty
                       ? null
                       : getSourceDisplayName(
-                          _detectedLanguage ?? _sourceLanguage,
+                          _controller.detectedLanguage ??
+                              _controller.sourceLanguage,
                         ),
-                  detectedAutomatically: isAutoSource(_sourceLanguage),
+                  detectedAutomatically:
+                      isAutoSource(_controller.sourceLanguage),
                 ),
                 onChanged: (v) => _handleTextChanged(v),
                 onSubmitted: _handleButtonTappedTrans,
@@ -1112,24 +657,16 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
                   onRequery: _handleButtonTappedTrans,
                 ),
               MiniTranslatorTranslation(
-                querySubmitted: _querySubmitted,
-                translationResultList: _translationResultList,
-                translationServiceIds: _translationServiceIds,
-                serviceNameById: _serviceNameById,
-                providerTypeByServiceId: _providerTypeByServiceId,
-                defaultServiceId: _defaultServiceId,
-                preferredServiceId: _defaultServiceId,
+                query: query,
                 inputSubmitMode: settingsStore.inputSubmitMode,
-                matchedAutomatically: _selectedTargetLanguage == null,
+                matchedAutomatically: _controller.targetLanguage == null,
                 compareOpenTargets: _compareOpen,
                 copiedTarget: _copiedTarget,
                 onToggleCompare: _handleToggleCompare,
                 onCopyTarget: _handleCopyTarget,
                 onRequery: _handleButtonTappedTrans,
               ),
-              MiniTranslatorWordDefinition(
-                translationResultList: _translationResultList,
-              ),
+              MiniTranslatorWordDefinition(lookUp: query?.dictionary),
             ],
           ),
         ),
@@ -1138,13 +675,13 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
           hasContent: hasTranslation && !allMissing,
           copyVisible: !stacked,
           copied: _copiedTarget == _kCopiedAll,
-          starred: _starred,
+          starred: _controller.starred,
           translateEnabled: _text.isNotEmpty,
           // 原文译文皆无 —— 开局还没输入 —— 清空无从谈起，整颗收起来。
           clearVisible: _text.isNotEmpty || _querySubmitted,
           retry: noResult || allMissing,
           onCopy: _handleButtonTappedCopy,
-          onBookmark: _toggleHistoryFavorite,
+          onBookmark: _controller.toggleFavorite,
           onTranslate: _handleButtonTappedTrans,
           onClear: _handleButtonTappedClear,
         ),
@@ -1184,9 +721,9 @@ class _MiniTranslatorPageState extends State<MiniTranslatorPage>
             children: [
               MiniTranslatorTopBar(
                 key: _toolbarViewKey,
-                sourceLanguage: _sourceLanguage,
-                selectedTargetLanguage: _selectedTargetLanguage,
-                activeConfigIndex: _activeConfigIndex,
+                sourceLanguage: _controller.sourceLanguage,
+                selectedTargetLanguage: _controller.targetLanguage,
+                activeConfigIndex: _controller.configuredTargetIndex,
                 persistentTargets: settingsStore.general.translationTargets,
                 commonLanguageCodes:
                     settingsStore.general.commonLanguages.isNotEmpty

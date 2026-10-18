@@ -2,6 +2,7 @@ mod api_server;
 pub mod domain;
 mod remote;
 pub mod runtime;
+pub mod session;
 #[cfg(test)]
 mod test_support;
 pub use api_server::{ApiServerInfo, RuntimeApiServer};
@@ -9,6 +10,11 @@ pub use runtime::{
     Runtime, RuntimeDictionary, RuntimeError, RuntimeGlossary, RuntimeHistory, RuntimeLlm,
     RuntimeOcr, RuntimePermission, RuntimeSettings, RuntimeTextExtractor, RuntimeTranslation,
     SettingsChange, SettingsSubscription, StreamCallback,
+};
+pub use session::{
+    RuntimeTranslationSession, TranslationBlockState, TranslationOutputState,
+    TranslationQueryState, TranslationServiceResultState, TranslationSessionListener,
+    TranslationSessionState,
 };
 
 use beyondtranslate_core::{

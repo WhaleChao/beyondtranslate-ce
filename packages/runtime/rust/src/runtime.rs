@@ -29,6 +29,7 @@ use crate::domain::settings::{
     ShortcutSettingsPatch, SYSTEM_PROVIDER_ID,
 };
 use crate::domain::text_extractor;
+use crate::session::RuntimeTranslationSession;
 use crate::RuntimeApiServer;
 use beyondtranslate_core::TranslationTarget;
 use beyondtranslate_engine::prompt::GlossaryTerm;
@@ -503,6 +504,23 @@ impl Runtime {
         Arc::new(RuntimePermission)
     }
 
+    /// The translation backend a window runs on — see [`RuntimeTranslationSession`].
+    ///
+    /// `initial_target_language` stands behind 自动匹配 until a configured
+    /// target or a query resolves it; `dictionary_enabled` says whether a
+    /// submit also runs the first dictionary service.
+    pub fn translation_session(
+        self: Arc<Self>,
+        initial_target_language: String,
+        dictionary_enabled: bool,
+    ) -> Arc<RuntimeTranslationSession> {
+        RuntimeTranslationSession::for_runtime(
+            (*self).clone(),
+            initial_target_language,
+            dictionary_enabled,
+        )
+    }
+
     pub fn start_api_server(
         self: Arc<Self>,
         host: String,
@@ -523,6 +541,22 @@ impl Runtime {
 }
 
 impl Runtime {
+    /// Whether a translation service answers through an LLM — and so is asked
+    /// to stream, the text arriving as it is written rather than at the end.
+    pub(crate) async fn service_streams(&self, service_id: &str) -> bool {
+        let Ok(resolved) = self
+            .resolve_service(service_id, ServiceType::Translation)
+            .await
+        else {
+            return false;
+        };
+        let state = self.inner.state.read().await;
+        state
+            .engine
+            .require(&resolved.provider_id)
+            .is_ok_and(|provider| provider.llm().is_some())
+    }
+
     /// The languages the user actually translates between: every enabled
     /// translation target's language, plus any source they pinned to a
     /// concrete language.
